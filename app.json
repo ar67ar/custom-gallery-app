@@ -7,6 +7,11 @@
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.mydatasafe.app"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "857508ef-1345-4293-8ef1-b5ebefcf80d3"
+      }
     }
   }
 }
