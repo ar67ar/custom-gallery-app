@@ -3,14 +3,16 @@
     "name": "My Data Safe",
     "slug": "my-data-safe",
     "version": "1.0.0",
+    "owner": "ar76ar-devs-team",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "android": {
-      "package": "com.mydatasafe.app"
+      "package": "com.mydatasafe.app",
+      "versionCode": 1
     },
     "extra": {
       "eas": {
-        "projectId": "e110fb4e-8b13-4258-a657-e3d5022ca7c5"
+        "projectId": "e110fb4e-8b13-4886-9057-0b190f898a37"
       }
     }
   }
