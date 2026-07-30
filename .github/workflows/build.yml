@@ -29,6 +29,11 @@ jobs:
       - name: Expo Prebuild
         run: npx expo prebuild --platform android --clean
 
+      - name: Fix Missing Colors Resource
+        run: |
+          mkdir -p android/app/src/main/res/values
+          echo '<?xml version="1.0" encoding="utf-8"?><resources><color name="splashscreen_background">#FFFFFF</color></resources>' > android/app/src/main/res/values/colors.xml
+
       - name: Configure Memory & Gradle
         run: |
           mkdir -p ~/.gradle
