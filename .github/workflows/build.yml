@@ -23,28 +23,20 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Check files location
-        run: ls -la
-
-      - name: Install Dependencies
-        run: |
-          npm install
-          npx expo install react-native
-
-      - name: Setup EAS CLI
-        run: npm install -g eas-cli
+      - name: Install dependencies
+        run: npm install
 
       - name: Generate Native Android Directory
-        run: npx expo prebuild --platform android --clean
+        run: npx expo prebuild --platform android
 
-      - name: Build Android Release APK
+      - name: Build Android Debug APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: My-Data-Safe-App
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
