@@ -23,6 +23,9 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
+      - name: Check files location
+        run: ls -la
+
       - name: Install Dependencies
         run: |
           npm install
