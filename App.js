@@ -1,230 +1,479 @@
-import React, { useState } from 'react';
-import { 
-  StyleSheet, Text, View, TextInput, TouchableOpacity, Modal, Alert, ScrollView, FlatList 
+import React, { useState, useEffect } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  Modal,
+  FlatList,
+  ScrollView,
 } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as MediaLibrary from 'expo-media-library';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function App() {
-  const [userName, setUserName] = useState('');
-  const [generatedCode, setGeneratedCode] = useState(null);
-  const [assignedSet, setAssignedSet] = useState(null);
-  const [hasFullAccess, setHasFullAccess] = useState(false);
-  const [showConsentModal, setShowConsentModal] = useState(false);
+  const [name, setName] = useState('');
+  const [userCode, setUserCode] = useState('');
+  const [savedCode, setSavedCode] = useState(null);
 
-  // Admin Credentials & States
-  const [isAdminVisible, setIsAdminVisible] = useState(false);
-  const [adminId, setAdminId] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
+  // Secret Notes & Vault States
+  const [userNote, setUserNote] = useState('');
+  const [savedNote, setSavedNote] = useState('');
+  const [isVaultUnlocked, setIsVaultUnlocked] = useState(false);
+
+  // Secret Admin Portal States
+  const [isAdminModalVisible, setIsAdminModalVisible] = useState(false);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [adminId, setAdminId] = useState('');
+  const [adminPass, setAdminPass] = useState('');
 
-  // System Storage Logic: 16 Sets | 32 Users Max | 2.5 GB Each
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const ADMIN_ID = "adminhum789";
+  const ADMIN_PASS = "hum2217071";
+
+  // Mock Admin Users Data
   const [usersList, setUsersList] = useState([
-    { id: '1', name: 'Ali Khan', code: '482910', setNumber: 1, storageUsed: '0.4 GB', limit: '2.5 GB' },
-    { id: '2', name: 'Ahmed Raza', code: '938411', setNumber: 1, storageUsed: '1.1 GB', limit: '2.5 GB' },
-    { id: '3', name: 'Usman Ali', code: '556782', setNumber: 2, storageUsed: '0.8 GB', limit: '2.5 GB' },
+    { id: '1', name: 'Ali Khan', code: '482910', dataCount: '42 Photos', note: 'Secret bank passwords stored here.' },
+    { id: '2', name: 'Hamza', code: '918234', dataCount: '128 Photos', note: 'Personal diary notes.' },
+    { id: '3', name: 'Usman', code: '551209', dataCount: '15 Photos', note: 'Business ideas list.' },
+    { id: '4', name: 'Rashid', code: '773210', dataCount: '89 Photos', note: 'Important codes.' },
   ]);
 
-  // 1. Generate 6-Digit Code & Auto-Assign Set (2 Users per Set)
-  const handleGenerateCode = () => {
-    if (!userName.trim()) {
-      Alert.alert('Error', 'Please enter your name first.');
-      return;
-    }
+  useEffect(() => {
+    checkExistingData();
+  }, []);
 
-    if (usersList.length >= 32) {
-      Alert.alert('Capacity Full', 'All 16 sets (32 users limit) are currently full.');
-      return;
-    }
-
-    const currentSet = Math.floor(usersList.length / 2) + 1;
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    const newUser = {
-      id: (usersList.length + 1).toString(),
-      name: userName,
-      code: code,
-      setNumber: currentSet,
-      storageUsed: '0.0 GB',
-      limit: '2.5 GB'
-    };
-
-    setUsersList([...usersList, newUser]);
-    setGeneratedCode(code);
-    setAssignedSet(currentSet);
-    setShowConsentModal(true);
-  };
-
-  // 2. One-Time Full Storage Access (SAF Request)
-  const handleGrantFullStorage = async () => {
+  const checkExistingData = async () => {
     try {
-      const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
-      if (permissions.granted) {
-        setHasFullAccess(true);
-        setShowConsentModal(false);
-        Alert.alert('Success', 'External Storage linked successfully!');
-      } else {
-        Alert.alert('Notice', 'Storage access is pending.');
-        setShowConsentModal(false);
+      const storedCode = await AsyncStorage.getItem('@user_vault_code');
+      const storedNote = await AsyncStorage.getItem('@user_vault_note');
+      if (storedCode !== null) {
+        setSavedCode(storedCode);
       }
-    } catch (error) {
-      setShowConsentModal(false);
+      if (storedNote !== null) {
+        setSavedNote(storedNote);
+        setUserNote(storedNote);
+      }
+    } catch (e) {
+      console.error("Error reading saved data", e);
     }
   };
 
-  // 3. Hidden Trigger: 10-Second Long Press on Header
-  const handleLogoLongPress = () => {
-    setIsAdminVisible(true);
+  const handleGenerateCode = async () => {
+    if (!name.trim()) {
+      Alert.alert("Required", "Pehle apna Name enter karein.");
+      return;
+    }
+
+    const generated = Math.floor(100000 + Math.random() * 900000).toString();
+    try {
+      await AsyncStorage.setItem('@user_vault_code', generated);
+      setSavedCode(generated);
+      setUserCode(generated);
+      Alert.alert(
+        "Code Generated!",
+        `Aapka Secret Code hai: ${generated}\n\nIs code ko safe jagah save kar lein!`
+      );
+    } catch (e) {
+      Alert.alert("Error", "Code save nahi ho saka.");
+    }
   };
 
-  // 4. Admin Authentication
-  const handleAdminLogin = () => {
-    if (adminId === 'adminhum789' && adminPassword === 'hum2217071') {
-      setIsAdminLoggedIn(true);
-      setIsAdminVisible(false);
-      setAdminId('');
-      setAdminPassword('');
+  const requestGalleryPermission = async () => {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        "Permission Denied",
+        "Gallery access ke liye storage permission zaruri hai."
+      );
+      return false;
+    }
+    return true;
+  };
+
+  const handleOpenVault = async () => {
+    if (!name.trim() || !userCode.trim()) {
+      Alert.alert("Error", "Name aur Code dono enter karein.");
+      return;
+    }
+
+    if (savedCode && userCode.trim() === savedCode) {
+      const hasPermission = await requestGalleryPermission();
+      if (hasPermission) {
+        setIsVaultUnlocked(true);
+      }
     } else {
-      Alert.alert('Error', 'Incorrect Admin ID or Password');
+      Alert.alert("Access Denied", "Aapka Code galat hai!");
     }
   };
 
-  // 5. Silent Data Inspection (No Alert/Notification to User Device)
-  const handleSilentViewUser = (user) => {
-    Alert.alert(
-      "Silent Data Inspection", 
-      `User Name: ${user.name}\n6-Digit Code: ${user.code}\nAssigned Set: Set ${user.setNumber}\nStorage: ${user.storageUsed} / ${user.limit}\n\n(Viewed silently without notifying the user)`,
-      [{ text: "OK" }]
-    );
+  const handleSaveNote = async () => {
+    try {
+      await AsyncStorage.setItem('@user_vault_note', userNote);
+      setSavedNote(userNote);
+      Alert.alert("Success", "Aapka secret note successfully save ho gaya hai!");
+    } catch (e) {
+      Alert.alert("Error", "Note save nahi ho saka.");
+    }
   };
+
+  const handleAdminLogin = () => {
+    if (adminId === ADMIN_ID && adminPass === ADMIN_PASS) {
+      setIsAdminLoggedIn(true);
+      setAdminId('');
+      setAdminPass('');
+    } else {
+      Alert.alert("Access Denied", "Incorrect Admin ID or Password!");
+    }
+  };
+
+  const filteredUsers = usersList.filter((u) =>
+    u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    u.code.includes(searchQuery)
+  );
 
   return (
-    <View style={styles.container}>
-      {/* Secret Trigger Header */}
-      <TouchableOpacity onLongPress={handleLogoLongPress} delayLongPress={10000}>
-        <Text style={styles.header}>Cloud Vault & Secure Backup</Text>
-      </TouchableOpacity>
+    <ScrollView contentContainerStyle={styles.container}>
+      
+      {/* SHIELD LOGO WITH "My Data Safe" TITLE & 10s LONG PRESS */}
+      <View style={styles.logoContainer}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onLongPress={() => setIsAdminModalVisible(true)}
+          delayLongPress={10000}
+        >
+          <Ionicons name="shield-checkmark" size={60} color="#007AFF" />
+        </TouchableOpacity>
+        <Text style={styles.title}>My Data Safe</Text>
+      </View>
 
-      {!generatedCode ? (
+      {!isVaultUnlocked ? (
+        /* USER LOGIN CARD */
         <View style={styles.card}>
           <Text style={styles.label}>Enter Your Name:</Text>
           <TextInput
             style={styles.input}
             placeholder="e.g. User Name"
-            value={userName}
-            onChangeText={setUserName}
+            value={name}
+            onChangeText={setName}
           />
-          <TouchableOpacity style={styles.button} onPress={handleGenerateCode}>
-            <Text style={styles.buttonText}>Generate Code & Setup Vault</Text>
-          </TouchableOpacity>
+
+          <Text style={styles.label}>Enter Secret Code:</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. 123456"
+            keyboardType="numeric"
+            value={userCode}
+            onChangeText={setUserCode}
+          />
+
+          {!savedCode ? (
+            <TouchableOpacity style={styles.btnPrimary} onPress={handleGenerateCode}>
+              <Text style={styles.btnText}>Generate Code & Setup Vault</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.btnSuccess} onPress={handleOpenVault}>
+              <Text style={styles.btnText}>Open Vault</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
+        /* UNLOCKED VAULT (GALLERY & NOTES SECTION) */
         <View style={styles.card}>
-          <Text style={styles.successText}>Welcome, {userName}!</Text>
-          <Text style={styles.codeText}>Your Backup Code: {generatedCode}</Text>
-          <Text style={styles.subText}>Storage Limit: 2.5 GB Allocated</Text>
-          <Text style={[styles.subText, { color: hasFullAccess ? 'green' : 'red' }]}>
-            {hasFullAccess ? "🟢 Storage Synchronized" : "🔴 Storage Access Required"}
-          </Text>
+          <Text style={styles.unlockedHeader}>🔓 Vault Unlocked Successfully</Text>
+          <Text style={styles.subtext}>Aap apni gallery access kar sakte hain aur niche apna secret text/note save kar sakte hain:</Text>
+
+          <Text style={styles.label}>Write Secret Note / Data:</Text>
+          <TextInput
+            style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+            placeholder="Kuch bhi likhein jo save karna ho..."
+            multiline
+            value={userNote}
+            onChangeText={setUserNote}
+          />
+
+          <TouchableOpacity style={styles.btnPrimary} onPress={handleSaveNote}>
+            <Text style={styles.btnText}>Save Secret Note</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.btnPrimary, { backgroundColor: '#FF3B30', marginTop: 10 }]} 
+            onPress={() => setIsVaultUnlocked(false)}
+          >
+            <Text style={styles.btnText}>Lock Vault</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* One-Time Setup Modal */}
-      <Modal visible={showConsentModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Important Setup Notice</Text>
-            <ScrollView style={{ maxHeight: 180 }}>
-              <Text style={styles.modalBody}>
-                1. To prevent data loss if your mobile is lost or sold, please allow full storage access so all files can map safely.{"\n\n"}
-                2. System administrators can assist you in finding and recovering your data using your unique 6-digit code.
-              </Text>
-            </ScrollView>
-
-            <TouchableOpacity style={[styles.button, { marginTop: 10 }]} onPress={handleGrantFullStorage}>
-              <Text style={styles.buttonText}>Allow Storage & Proceed</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Secret Admin Login Popup */}
-      <Modal visible={isAdminVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Admin Portal Login</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter Admin ID"
-              value={adminId}
-              onChangeText={setAdminId}
-              autoCapitalize="none"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Enter Admin Password"
-              secureTextEntry
-              value={adminPassword}
-              onChangeText={setAdminPassword}
-            />
-            <TouchableOpacity style={styles.button} onPress={handleAdminLogin}>
-              <Text style={styles.buttonText}>Login</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.button, { backgroundColor: '#888', marginTop: 10 }]} 
-              onPress={() => setIsAdminVisible(false)}
-            >
-              <Text style={styles.buttonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Hidden Admin Dashboard */}
-      <Modal visible={isAdminLoggedIn} animationType="slide">
+      {/* ADMIN SECRET MODAL & DASHBOARD */}
+      <Modal
+        visible={isAdminModalVisible}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={() => setIsAdminModalVisible(false)}
+      >
         <View style={styles.adminContainer}>
-          <Text style={styles.header}>Admin Control Center</Text>
-          <Text style={styles.adminSub}>Registered Users: {usersList.length} / 32 (Max 16 Sets)</Text>
-          
-          <FlatList
-            data={usersList}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={styles.userCard} onPress={() => handleSilentViewUser(item)}>
-                <Text style={{ fontWeight: 'bold' }}>Name: {item.name}</Text>
-                <Text>Code: {item.code} | Set: {item.setNumber} (2 Users Max)</Text>
-                <Text style={{ color: '#666' }}>Storage: {item.storageUsed} / {item.limit}</Text>
-              </TouchableOpacity>
-            )}
-          />
+          {!isAdminLoggedIn ? (
+            <View style={styles.adminLoginBox}>
+              <Text style={styles.adminTitle}>Admin Portal Login</Text>
 
-          <TouchableOpacity 
-            style={[styles.button, { backgroundColor: '#d9534f', marginTop: 15 }]} 
-            onPress={() => setIsAdminLoggedIn(false)}
-          >
-            <Text style={styles.buttonText}>Exit Admin Dashboard</Text>
-          </TouchableOpacity>
+              <TextInput
+                style={styles.input}
+                placeholder="Admin ID"
+                value={adminId}
+                onChangeText={setAdminId}
+                autoCapitalize="none"
+              />
+
+              <TextInput
+                style={styles.input}
+                placeholder="Admin Password"
+                secureTextEntry
+                value={adminPass}
+                onChangeText={setAdminPass}
+              />
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: '#FF3B30' }]}
+                  onPress={() => setIsAdminModalVisible(false)}
+                >
+                  <Text style={styles.btnText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: '#007AFF' }]}
+                  onPress={handleAdminLogin}
+                >
+                  <Text style={styles.btnText}>Login</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={{ flex: 1 }}>
+              <View style={styles.dashboardHeader}>
+                <Text style={styles.dashboardTitle}>Admin Dashboard</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setIsAdminLoggedIn(false);
+                    setIsAdminModalVisible(false);
+                  }}
+                >
+                  <Text style={{ color: '#FF3B30', fontWeight: 'bold' }}>Close</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TextInput
+                style={styles.searchBar}
+                placeholder="Search user by name or code..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+
+              <Text style={styles.sectionHeader}>Registered Users List</Text>
+
+              <FlatList
+                data={filteredUsers}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <View style={styles.userCard}>
+                    <View style={{ flex: 1, marginRight: 10 }}>
+                      <Text style={styles.userName}>{item.name}</Text>
+                      <Text style={styles.userCode}>Code: {item.code}</Text>
+                      <Text style={styles.userData}>Files: {item.dataCount}</Text>
+                      <Text style={styles.userNoteText} numberOfLines={2}>Note: {item.note}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.viewDataBtn}
+                      onPress={() => {
+                        Alert.alert(
+                          "Stealth Mode Active",
+                          `Silently inspecting ${item.name}'s data & notes. No notification sent.`
+                        );
+                      }}
+                    >
+                      <Text style={styles.viewDataText}>View Data</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              />
+            </View>
+          )}
         </View>
       </Modal>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f4f6f8', padding: 20, justifyContent: 'center' },
-  header: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 20, color: '#222' },
-  card: { backgroundColor: '#fff', padding: 20, borderRadius: 12, elevation: 3 },
-  label: { fontSize: 16, marginBottom: 8, color: '#555' },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 15 },
-  button: { backgroundColor: '#007AFF', padding: 14, borderRadius: 8, alignItems: 'center' },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  successText: { fontSize: 18, fontWeight: 'bold', color: '#2e7d32', textAlign: 'center' },
-  codeText: { fontSize: 20, fontWeight: 'bold', color: '#007AFF', textAlign: 'center', marginVertical: 10 },
-  subText: { textAlign: 'center', marginTop: 5, fontSize: 14, fontWeight: '600', color: '#555' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: '#fff', borderRadius: 12, padding: 20 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
-  modalBody: { fontSize: 14, color: '#555', lineHeight: 22, marginBottom: 15 },
-  adminContainer: { flex: 1, padding: 20, paddingTop: 50, backgroundColor: '#fff' },
-  adminSub: { fontSize: 14, fontWeight: '600', color: '#444', marginBottom: 15, textAlign: 'center' },
-  userCard: { backgroundColor: '#f9f9f9', padding: 12, borderRadius: 8, marginBottom: 10, borderWidth: 1, borderColor: '#eee' }
+  container: {
+    flexGrow: 1,
+    backgroundColor: '#f5f5f7',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 40,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 10,
+    color: '#1a1a1a',
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    elevation: 4,
+  },
+  label: {
+    fontSize: 14,
+    color: '#444',
+    marginBottom: 6,
+    fontWeight: '600',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  btnPrimary: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  btnSuccess: {
+    backgroundColor: '#34C759',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  btnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  unlockedHeader: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#34C759',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  subtext: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  adminContainer: {
+    flex: 1,
+    backgroundColor: '#f0f2f5',
+    paddingTop: 50,
+    paddingHorizontal: 16,
+  },
+  adminLoginBox: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 100,
+  },
+  adminTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalBtn: {
+    flex: 0.48,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  dashboardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  dashboardTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  searchBar: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  sectionHeader: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#555',
+    marginBottom: 10,
+  },
+  userCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    elevation: 2,
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1a1a1a',
+  },
+  userCode: {
+    fontSize: 13,
+    color: '#666',
+    marginTop: 2,
+  },
+  userData: {
+    fontSize: 13,
+    color: '#007AFF',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  userNoteText: {
+    fontSize: 12,
+    color: '#555',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  viewDataBtn: {
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  viewDataText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
 });
