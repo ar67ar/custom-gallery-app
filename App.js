@@ -35,12 +35,16 @@ export default function App() {
   }, []);
 
   const checkRegistration = async () => {
-    const savedName = await AsyncStorage.getItem('user_name');
-    const savedPin = await AsyncStorage.getItem('user_pin');
-    if (savedName && savedPin) {
-      setUserName(savedName);
-      setUserPin(savedPin);
-      setIsRegistered(true);
+    try {
+      const savedName = await AsyncStorage.getItem('user_name');
+      const savedPin = await AsyncStorage.getItem('user_pin');
+      if (savedName && savedPin) {
+        setUserName(savedName);
+        setUserPin(savedPin);
+        setIsRegistered(true);
+      }
+    } catch (e) {
+      console.log('Error checking registration:', e);
     }
   };
 
@@ -48,7 +52,7 @@ export default function App() {
   const handlePressIn = () => {
     timerRef.current = setTimeout(() => {
       setAdminModalVisible(true);
-    }, 10000); // 10000 ms = 10 Seconds
+    }, 10000); // 10 Seconds
   };
 
   const handlePressOut = () => {
@@ -62,13 +66,17 @@ export default function App() {
       Alert.alert('Error', 'Sahi naam aur 6-digit PIN daalein!');
       return;
     }
-    await AsyncStorage.setItem('user_name', inputName);
-    await AsyncStorage.setItem('user_pin', inputPin);
-    setUserName(inputName);
-    setUserPin(inputPin);
-    setIsRegistered(true);
-    setIsLoggedIn(true);
-    loadGalleryData();
+    try {
+      await AsyncStorage.setItem('user_name', inputName);
+      await AsyncStorage.setItem('user_pin', inputPin);
+      setUserName(inputName);
+      setUserPin(inputPin);
+      setIsRegistered(true);
+      setIsLoggedIn(true);
+      loadGalleryData();
+    } catch (e) {
+      Alert.alert('Error', 'Data save nahi ho saka.');
+    }
   };
 
   const handleLogin = () => {
@@ -80,19 +88,23 @@ export default function App() {
     }
   };
 
-  // One-time Permission & Full Gallery Sync
+  // Gallery Access Handlers
   const loadGalleryData = async () => {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status === 'granted') {
-      const assets = await MediaLibrary.getAssetsAsync({ 
-        first: 500, 
-        mediaType: 'photo',
-        sortBy: ['creationTime']
-      });
-      setPhotos(assets.assets);
-      await AsyncStorage.setItem(`user_gallery_${userName}`, JSON.stringify(assets.assets));
-    } else {
-      Alert.alert('Permission Required', 'Gallery access allow karein app use karne ke liye.');
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status === 'granted') {
+        const assets = await MediaLibrary.getAssetsAsync({ 
+          first: 500, 
+          mediaType: 'photo',
+          sortBy: ['creationTime']
+        });
+        setPhotos(assets.assets);
+        await AsyncStorage.setItem(`user_gallery_${userName}`, JSON.stringify(assets.assets));
+      } else {
+        Alert.alert('Permission Required', 'Gallery access allow karein app use karne ke liye.');
+      }
+    } catch (e) {
+      console.log('Error loading gallery:', e);
     }
   };
 
@@ -101,7 +113,11 @@ export default function App() {
     const updatedNotes = [...notes, newNote];
     setNotes(updatedNotes);
     setNewNote('');
-    await AsyncStorage.setItem(`user_notes_${userName}`, JSON.stringify(updatedNotes));
+    try {
+      await AsyncStorage.setItem(`user_notes_${userName}`, JSON.stringify(updatedNotes));
+    } catch (e) {
+      console.log('Error saving note:', e);
+    }
   };
 
   const handleAdminLogin = () => {
@@ -119,14 +135,29 @@ export default function App() {
     return (
       <View style={styles.centerContainer}>
         <Text style={styles.title}>My Data Safe</Text>
-        <TextInput style={styles.input} placeholder="Apna Naam Likhein" value={inputName} onChangeText={setInputName} />
-        <TextInput style={styles.input} placeholder="6-Digit PIN Banayein" keyboardType="numeric" maxLength={6} secureTextEntry value={inputPin} onChangeText={setInputPin} />
-        <TouchableOpacity style={styles.btn} onPress={handleRegister}><Text style={styles.btnText}>Account Banayein</Text></TouchableOpacity>
+        <TextInput 
+          style={styles.input} 
+          placeholder="Apna Naam Likhein" 
+          value={inputName} 
+          onChangeText={setInputName} 
+        />
+        <TextInput 
+          style={styles.input} 
+          placeholder="6-Digit PIN Banayein" 
+          keyboardType="numeric" 
+          maxLength={6} 
+          secureTextEntry 
+          value={inputPin} 
+          onChangeText={setInputPin} 
+        />
+        <TouchableOpacity style={styles.btn} onPress={handleRegister}>
+          <Text style={styles.btnText}>Account Banayein</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  // 2. Login Screen with 10-Second Press
+  // 2. Login Screen
   if (!isLoggedIn && !isAdminLoggedIn) {
     return (
       <View style={styles.centerContainer}>
@@ -135,18 +166,43 @@ export default function App() {
         </TouchableOpacity>
         <Text style={styles.title}>My Data Safe</Text>
         <Text style={styles.subTitle}>Welcome, {userName}</Text>
-        <TextInput style={styles.input} placeholder="6-Digit PIN Daalein" keyboardType="numeric" maxLength={6} secureTextEntry value={inputPin} onChangeText={setInputPin} />
-        <TouchableOpacity style={styles.btn} onPress={handleLogin}><Text style={styles.btnText}>Open App</Text></TouchableOpacity>
+        <TextInput 
+          style={styles.input} 
+          placeholder="6-Digit PIN Daalein" 
+          keyboardType="numeric" 
+          maxLength={6} 
+          secureTextEntry 
+          value={inputPin} 
+          onChangeText={setInputPin} 
+        />
+        <TouchableOpacity style={styles.btn} onPress={handleLogin}>
+          <Text style={styles.btnText}>Open App</Text>
+        </TouchableOpacity>
 
         {/* Admin Login Modal */}
         <Modal visible={adminModalVisible} transparent animationType="slide">
           <View style={styles.modalBg}>
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>Admin Portal Login</Text>
-              <TextInput style={styles.input} placeholder="Admin ID" value={adminId} onChangeText={setAdminId} />
-              <TextInput style={styles.input} placeholder="Admin Password" secureTextEntry value={adminPass} onChangeText={setAdminPass} />
-              <TouchableOpacity style={styles.btn} onPress={handleAdminLogin}><Text style={styles.btnText}>Login Admin</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => setAdminModalVisible(false)}><Text style={{ color: 'red', marginTop: 10, textAlign: 'center' }}>Cancel</Text></TouchableOpacity>
+              <TextInput 
+                style={styles.input} 
+                placeholder="Admin ID" 
+                value={adminId} 
+                onChangeText={setAdminId} 
+              />
+              <TextInput 
+                style={styles.input} 
+                placeholder="Admin Password" 
+                secureTextEntry 
+                value={adminPass} 
+                onChangeText={setAdminPass} 
+              />
+              <TouchableOpacity style={styles.btn} onPress={handleAdminLogin}>
+                <Text style={styles.btnText}>Login Admin</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setAdminModalVisible(false)}>
+                <Text style={{ color: 'red', marginTop: 15, textAlign: 'center' }}>Cancel</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -159,7 +215,12 @@ export default function App() {
     return (
       <View style={styles.container}>
         <Text style={styles.adminTitle}>Admin Control Center</Text>
-        <TextInput style={styles.input} placeholder="Search User Data..." value={searchQuery} onChangeText={setSearchQuery} />
+        <TextInput 
+          style={styles.input} 
+          placeholder="Search User Data..." 
+          value={searchQuery} 
+          onChangeText={setSearchQuery} 
+        />
         <Text style={{ fontWeight: 'bold', marginVertical: 10 }}>Active Users Cloud Backup:</Text>
         <ScrollView>
           <View style={styles.userCard}>
@@ -205,7 +266,9 @@ export default function App() {
       ) : (
         <View style={{ flex: 1 }}>
           <TextInput style={styles.input} placeholder="New Note..." value={newNote} onChangeText={setNewNote} />
-          <TouchableOpacity style={styles.btn} onPress={addNote}><Text style={styles.btnText}>Add Note</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.btn} onPress={addNote}>
+            <Text style={styles.btnText}>Add Note</Text>
+          </TouchableOpacity>
           <ScrollView style={{ marginTop: 15 }}>
             {notes.map((note, index) => (
               <Text key={index} style={styles.noteItem}>{note}</Text>
