@@ -14,8 +14,22 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.mydatasafe.app"
+      "package": "com.mydatasafe.app",
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
     },
+    "plugins": [
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow My Data Safe to access your photo gallery.",
+          "saveTemplate": true
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     },
