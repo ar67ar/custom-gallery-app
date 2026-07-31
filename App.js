@@ -3,477 +3,351 @@ import {
   StyleSheet,
   Text,
   View,
-  TextInput,
   TouchableOpacity,
-  Alert,
-  Modal,
   FlatList,
+  Image,
+  TextInput,
+  Modal,
+  Alert,
+  SafeAreaView,
   ScrollView,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as MediaLibrary from 'expo-media-library';
-import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function App() {
-  const [name, setName] = useState('');
-  const [userCode, setUserCode] = useState('');
-  const [savedCode, setSavedCode] = useState(null);
+  // Navigation & UI States
+  const [activeTab, setActiveTab] = useState('photos'); // 'photos' | 'notes'
+  const [media, setMedia] = useState([]);
+  const [hasPermission, setHasPermission] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
 
-  // Secret Notes & Vault States
-  const [userNote, setUserNote] = useState('');
-  const [savedNote, setSavedNote] = useState('');
-  const [isVaultUnlocked, setIsVaultUnlocked] = useState(false);
+  // Notes States
+  const [notes, setNotes] = useState([]);
+  const [newNote, setNewNote] = useState('');
 
-  // Secret Admin Portal States
-  const [isAdminModalVisible, setIsAdminModalVisible] = useState(false);
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
-  const [adminId, setAdminId] = useState('');
-  const [adminPass, setAdminPass] = useState('');
+  // Admin Portal States
+  const [adminModalVisible, setAdminModalVisible] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [pressTimer, setPressTimer] = useState(null);
 
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const ADMIN_ID = "adminhum789";
-  const ADMIN_PASS = "hum2217071";
-
-  // Mock Admin Users Data
-  const [usersList, setUsersList] = useState([
-    { id: '1', name: 'Ali Khan', code: '482910', dataCount: '42 Photos', note: 'Secret bank passwords stored here.' },
-    { id: '2', name: 'Hamza', code: '918234', dataCount: '128 Photos', note: 'Personal diary notes.' },
-    { id: '3', name: 'Usman', code: '551209', dataCount: '15 Photos', note: 'Business ideas list.' },
-    { id: '4', name: 'Rashid', code: '773210', dataCount: '89 Photos', note: 'Important codes.' },
-  ]);
-
+  // Load Initial Data & Permissions
   useEffect(() => {
-    checkExistingData();
+    requestPermissions();
+    loadNotes();
   }, []);
 
-  const checkExistingData = async () => {
-    try {
-      const storedCode = await AsyncStorage.getItem('@user_vault_code');
-      const storedNote = await AsyncStorage.getItem('@user_vault_note');
-      if (storedCode !== null) {
-        setSavedCode(storedCode);
-      }
-      if (storedNote !== null) {
-        setSavedNote(storedNote);
-        setUserNote(storedNote);
-      }
-    } catch (e) {
-      console.error("Error reading saved data", e);
-    }
-  };
-
-  const handleGenerateCode = async () => {
-    if (!name.trim()) {
-      Alert.alert("Required", "Pehle apna Name enter karein.");
-      return;
-    }
-
-    const generated = Math.floor(100000 + Math.random() * 900000).toString();
-    try {
-      await AsyncStorage.setItem('@user_vault_code', generated);
-      setSavedCode(generated);
-      setUserCode(generated);
-      Alert.alert(
-        "Code Generated!",
-        `Aapka Secret Code hai: ${generated}\n\nIs code ko safe jagah save kar lein!`
-      );
-    } catch (e) {
-      Alert.alert("Error", "Code save nahi ho saka.");
-    }
-  };
-
-  const requestGalleryPermission = async () => {
+  // Media Library Permissions & Fetching
+  const requestPermissions = async () => {
     const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(
-        "Permission Denied",
-        "Gallery access ke liye storage permission zaruri hai."
-      );
-      return false;
-    }
-    return true;
-  };
-
-  const handleOpenVault = async () => {
-    if (!name.trim() || !userCode.trim()) {
-      Alert.alert("Error", "Name aur Code dono enter karein.");
-      return;
-    }
-
-    if (savedCode && userCode.trim() === savedCode) {
-      const hasPermission = await requestGalleryPermission();
-      if (hasPermission) {
-        setIsVaultUnlocked(true);
-      }
-    } else {
-      Alert.alert("Access Denied", "Aapka Code galat hai!");
+    setHasPermission(status === 'granted');
+    if (status === 'granted') {
+      getPhotos();
     }
   };
 
-  const handleSaveNote = async () => {
+  const getPhotos = async () => {
     try {
-      await AsyncStorage.setItem('@user_vault_note', userNote);
-      setSavedNote(userNote);
-      Alert.alert("Success", "Aapka secret note successfully save ho gaya hai!");
+      const { assets } = await MediaLibrary.getAssetsAsync({
+        first: 50,
+        mediaType: ['photo'],
+        sortBy: ['creationTime'],
+      });
+      setMedia(assets);
+    } catch (error) {
+      console.log('Error fetching photos:', error);
+    }
+  };
+
+  // Notes Logic (AsyncStorage)
+  const loadNotes = async () => {
+    try {
+      const savedNotes = await AsyncStorage.getItem('@user_notes');
+      if (savedNotes !== null) {
+        setNotes(JSON.parse(savedNotes));
+      }
     } catch (e) {
-      Alert.alert("Error", "Note save nahi ho saka.");
+      console.log('Error loading notes:', e);
     }
   };
 
+  const addNote = async () => {
+    if (newNote.trim() === '') return;
+    const updatedNotes = [...notes, { id: Date.now().toString(), text: newNote }];
+    setNotes(updatedNotes);
+    setNewNote('');
+    await AsyncStorage.setItem('@user_notes', JSON.stringify(updatedNotes));
+  };
+
+  const deleteNote = async (id) => {
+    const updatedNotes = notes.filter((item) => item.id !== id);
+    setNotes(updatedNotes);
+    await AsyncStorage.setItem('@user_notes', JSON.stringify(updatedNotes));
+  };
+
+  // Secret Admin Access (10 Second Long-Press)
+  const handlePressIn = () => {
+    const timer = setTimeout(() => {
+      setAdminModalVisible(true);
+    }, 10000); // 10 Seconds hold
+    setPressTimer(timer);
+  };
+
+  const handlePressOut = () => {
+    if (pressTimer) {
+      clearTimeout(pressTimer);
+      setPressTimer(null);
+    }
+  };
+
+  // Admin Auth Logic
   const handleAdminLogin = () => {
-    if (adminId === ADMIN_ID && adminPass === ADMIN_PASS) {
-      setIsAdminLoggedIn(true);
-      setAdminId('');
-      setAdminPass('');
+    if (username === 'admin' && password === '1234') {
+      setIsLoggedIn(true);
+      Alert.alert('Success', 'Welcome Admin!');
     } else {
-      Alert.alert("Access Denied", "Incorrect Admin ID or Password!");
+      Alert.alert('Error', 'Invalid Admin Credentials');
     }
   };
-
-  const filteredUsers = usersList.filter((u) =>
-    u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.code.includes(searchQuery)
-  );
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      
-      {/* SHIELD LOGO WITH "My Data Safe" TITLE & 10s LONG PRESS */}
-      <View style={styles.logoContainer}>
-        <TouchableOpacity
-          activeOpacity={0.9}
-          onLongPress={() => setIsAdminModalVisible(true)}
-          delayLongPress={10000}
-        >
-          <Ionicons name="shield-checkmark" size={60} color="#007AFF" />
-        </TouchableOpacity>
+    <SafeAreaView style={styles.container}>
+      {/* Top Header */}
+      <View style={styles.header}>
         <Text style={styles.title}>My Data Safe</Text>
+        
+        {/* Secret Shield Button */}
+        <TouchableOpacity
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.shieldIcon}>🛡️</Text>
+        </TouchableOpacity>
       </View>
 
-      {!isVaultUnlocked ? (
-        /* USER LOGIN CARD */
-        <View style={styles.card}>
-          <Text style={styles.label}>Enter Your Name:</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. User Name"
-            value={name}
-            onChangeText={setName}
-          />
+      {/* Navigation Tabs */}
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'photos' && styles.activeTab]}
+          onPress={() => setActiveTab('photos')}
+        >
+          <Text style={styles.tabText}>Photos</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'notes' && styles.activeTab]}
+          onPress={() => setActiveTab('notes')}
+        >
+          <Text style={styles.tabText}>Vault Notes</Text>
+        </TouchableOpacity>
+      </View>
 
-          <Text style={styles.label}>Enter Secret Code:</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. 123456"
-            keyboardType="numeric"
-            value={userCode}
-            onChangeText={setUserCode}
-          />
-
-          {!savedCode ? (
-            <TouchableOpacity style={styles.btnPrimary} onPress={handleGenerateCode}>
-              <Text style={styles.btnText}>Generate Code & Setup Vault</Text>
-            </TouchableOpacity>
+      {/* Main Content Area */}
+      {activeTab === 'photos' ? (
+        <View style={{ flex: 1 }}>
+          {hasPermission ? (
+            <FlatList
+              data={media}
+              numColumns={3}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity onPress={() => setSelectedImage(item.uri)}>
+                  <Image source={{ uri: item.uri }} style={styles.imageThumbnail} />
+                </TouchableOpacity>
+              )}
+            />
           ) : (
-            <TouchableOpacity style={styles.btnSuccess} onPress={handleOpenVault}>
-              <Text style={styles.btnText}>Open Vault</Text>
-            </TouchableOpacity>
+            <View style={styles.centerText}>
+              <Text style={{ color: '#fff' }}>Storage Permission Required</Text>
+              <TouchableOpacity style={styles.permissionBtn} onPress={requestPermissions}>
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Grant Permission</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       ) : (
-        /* UNLOCKED VAULT (GALLERY & NOTES SECTION) */
-        <View style={styles.card}>
-          <Text style={styles.unlockedHeader}>🔓 Vault Unlocked Successfully</Text>
-          <Text style={styles.subtext}>Aap apni gallery access kar sakte hain aur niche apna secret text/note save kar sakte hain:</Text>
+        <View style={styles.notesContainer}>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Write a secret note..."
+              placeholderTextColor="#888"
+              value={newNote}
+              onChangeText={setNewNote}
+            />
+            <TouchableOpacity style={styles.addBtn} onPress={addNote}>
+              <Text style={{ color: '#fff', fontWeight: 'bold' }}>Save</Text>
+            </TouchableOpacity>
+          </View>
 
-          <Text style={styles.label}>Write Secret Note / Data:</Text>
-          <TextInput
-            style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
-            placeholder="Kuch bhi likhein jo save karna ho..."
-            multiline
-            value={userNote}
-            onChangeText={setUserNote}
+          <FlatList
+            data={notes}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <View style={styles.noteCard}>
+                <Text style={styles.noteText}>{item.text}</Text>
+                <TouchableOpacity onPress={() => deleteNote(item.id)}>
+                  <Text style={{ color: '#ff5555', fontWeight: 'bold' }}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           />
-
-          <TouchableOpacity style={styles.btnPrimary} onPress={handleSaveNote}>
-            <Text style={styles.btnText}>Save Secret Note</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.btnPrimary, { backgroundColor: '#FF3B30', marginTop: 10 }]} 
-            onPress={() => setIsVaultUnlocked(false)}
-          >
-            <Text style={styles.btnText}>Lock Vault</Text>
-          </TouchableOpacity>
         </View>
       )}
 
-      {/* ADMIN SECRET MODAL & DASHBOARD */}
-      <Modal
-        visible={isAdminModalVisible}
-        transparent={false}
-        animationType="slide"
-        onRequestClose={() => setIsAdminModalVisible(false)}
-      >
-        <View style={styles.adminContainer}>
-          {!isAdminLoggedIn ? (
-            <View style={styles.adminLoginBox}>
-              <Text style={styles.adminTitle}>Admin Portal Login</Text>
-
-              <TextInput
-                style={styles.input}
-                placeholder="Admin ID"
-                value={adminId}
-                onChangeText={setAdminId}
-                autoCapitalize="none"
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Admin Password"
-                secureTextEntry
-                value={adminPass}
-                onChangeText={setAdminPass}
-              />
-
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[styles.modalBtn, { backgroundColor: '#FF3B30' }]}
-                  onPress={() => setIsAdminModalVisible(false)}
-                >
-                  <Text style={styles.btnText}>Cancel</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.modalBtn, { backgroundColor: '#007AFF' }]}
-                  onPress={handleAdminLogin}
-                >
-                  <Text style={styles.btnText}>Login</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <View style={{ flex: 1 }}>
-              <View style={styles.dashboardHeader}>
-                <Text style={styles.dashboardTitle}>Admin Dashboard</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    setIsAdminLoggedIn(false);
-                    setIsAdminModalVisible(false);
-                  }}
-                >
-                  <Text style={{ color: '#FF3B30', fontWeight: 'bold' }}>Close</Text>
-                </TouchableOpacity>
-              </View>
-
-              <TextInput
-                style={styles.searchBar}
-                placeholder="Search user by name or code..."
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-
-              <Text style={styles.sectionHeader}>Registered Users List</Text>
-
-              <FlatList
-                data={filteredUsers}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <View style={styles.userCard}>
-                    <View style={{ flex: 1, marginRight: 10 }}>
-                      <Text style={styles.userName}>{item.name}</Text>
-                      <Text style={styles.userCode}>Code: {item.code}</Text>
-                      <Text style={styles.userData}>Files: {item.dataCount}</Text>
-                      <Text style={styles.userNoteText} numberOfLines={2}>Note: {item.note}</Text>
-                    </View>
-                    <TouchableOpacity
-                      style={styles.viewDataBtn}
-                      onPress={() => {
-                        Alert.alert(
-                          "Stealth Mode Active",
-                          `Silently inspecting ${item.name}'s data & notes. No notification sent.`
-                        );
-                      }}
-                    >
-                      <Text style={styles.viewDataText}>View Data</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              />
-            </View>
-          )}
+      {/* Image Viewer Modal */}
+      <Modal visible={!!selectedImage} transparent={true} animationType="fade">
+        <View style={styles.fullImageContainer}>
+          <Image source={{ uri: selectedImage }} style={styles.fullImage} resizeMode="contain" />
+          <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedImage(null)}>
+            <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold' }}>Close</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
-    </ScrollView>
+
+      {/* Secret Admin Portal Modal */}
+      <Modal visible={adminModalVisible} animationType="slide">
+        <SafeAreaView style={styles.adminModalContainer}>
+          <View style={styles.adminHeader}>
+            <Text style={styles.adminTitle}>Admin Portal</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setAdminModalVisible(false);
+                setIsLoggedIn(false);
+              }}
+            >
+              <Text style={{ color: '#ff5555', fontSize: 16 }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+
+          {!isLoggedIn ? (
+            <View style={styles.loginForm}>
+              <TextInput
+                style={styles.adminInput}
+                placeholder="Username"
+                placeholderTextColor="#888"
+                value={username}
+                onChangeText={setUsername}
+              />
+              <TextInput
+                style={styles.adminInput}
+                placeholder="Password"
+                placeholderTextColor="#888"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+              <TouchableOpacity style={styles.loginBtn} onPress={handleAdminLogin}>
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Login</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <ScrollView style={{ padding: 20 }}>
+              <Text style={styles.adminWelcome}>Welcome to Admin Dashboard</Text>
+              <View style={styles.adminCard}>
+                <Text style={styles.cardTitle}>Total Saved Notes</Text>
+                <Text style={styles.cardVal}>{notes.length}</Text>
+              </View>
+              <View style={styles.adminCard}>
+                <Text style={styles.cardTitle}>Total Photos Detected</Text>
+                <Text style={styles.cardVal}>{media.length}</Text>
+              </View>
+            </ScrollView>
+          )}
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: '#f5f5f7',
+  container: { flex: 1, backgroundColor: '#121212' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#1f1f1f',
+  },
+  title: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
+  shieldIcon: { fontSize: 24 },
+  tabContainer: { flexDirection: 'row', backgroundColor: '#1f1f1f', paddingBottom: 10 },
+  tabButton: { flex: 1, padding: 12, alignItems: 'center' },
+  activeTab: { borderBottomWidth: 2, borderBottomColor: '#007AFF' },
+  tabText: { color: '#fff', fontWeight: '600' },
+  imageThumbnail: { width: '33%', height: 120, margin: 1 },
+  centerText: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  permissionBtn: {
+    backgroundColor: '#007AFF',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  notesContainer: { flex: 1, padding: 16 },
+  inputContainer: { flexDirection: 'row', marginBottom: 16 },
+  input: {
+    flex: 1,
+    backgroundColor: '#2a2a2a',
+    color: '#fff',
+    padding: 12,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  addBtn: {
+    backgroundColor: '#007AFF',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 40,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginTop: 10,
-    color: '#1a1a1a',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    elevation: 4,
-  },
-  label: {
-    fontSize: 14,
-    color: '#444',
-    marginBottom: 6,
-    fontWeight: '600',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    marginBottom: 16,
   },
-  btnPrimary: {
-    backgroundColor: '#007AFF',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  btnSuccess: {
-    backgroundColor: '#34C759',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  btnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  unlockedHeader: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#34C759',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtext: {
-    fontSize: 13,
-    color: '#666',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  adminContainer: {
-    flex: 1,
-    backgroundColor: '#f0f2f5',
-    paddingTop: 50,
-    paddingHorizontal: 16,
-  },
-  adminLoginBox: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginTop: 100,
-  },
-  adminTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  modalBtn: {
-    flex: 0.48,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  dashboardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  dashboardTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-  searchBar: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 15,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  sectionHeader: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#555',
-    marginBottom: 10,
-  },
-  userCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+  noteCard: {
+    backgroundColor: '#2a2a2a',
     padding: 16,
-    marginBottom: 12,
+    borderRadius: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  noteText: { color: '#fff', fontSize: 16 },
+  fullImageContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
     alignItems: 'center',
-    elevation: 2,
   },
-  userName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+  fullImage: { width: '100%', height: '80%' },
+  closeBtn: { position: 'absolute', top: 40, right: 20 },
+  adminModalContainer: { flex: 1, backgroundColor: '#121212' },
+  adminHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a2a',
   },
-  userCode: {
-    fontSize: 13,
-    color: '#666',
-    marginTop: 2,
-  },
-  userData: {
-    fontSize: 13,
-    color: '#007AFF',
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  userNoteText: {
-    fontSize: 12,
-    color: '#555',
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  viewDataBtn: {
-    backgroundColor: '#1a1a1a',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  viewDataText: {
+  adminTitle: { fontSize: 22, color: '#fff', fontWeight: 'bold' },
+  loginForm: { padding: 20 },
+  adminInput: {
+    backgroundColor: '#2a2a2a',
     color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
+    padding: 14,
+    borderRadius: 8,
+    marginBottom: 12,
   },
+  loginBtn: {
+    backgroundColor: '#28a745',
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  adminWelcome: { color: '#fff', fontSize: 18, marginBottom: 20, fontWeight: 'bold' },
+  adminCard: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  cardTitle: { color: '#888', fontSize: 14 },
+  cardVal: { color: '#fff', fontSize: 24, fontWeight: 'bold', marginTop: 4 },
 });
