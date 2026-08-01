@@ -258,7 +258,7 @@ export default function App() {
               </View>
             </ScrollView>
           )}
-        SafeAreaView>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
