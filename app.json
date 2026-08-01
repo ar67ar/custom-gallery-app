@@ -17,10 +17,15 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow this app to access your data",
-          "savePhotosPermission": "Allow this app to access your data"
+          "photosPermission": "Allow this app",
+          "savePhotosPermission": "Allow this"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e110fb4e-8b13-4258-a657-e3d5022ca7c5"
+      }
+    }
   }
 }
