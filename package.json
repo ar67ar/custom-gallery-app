@@ -1,7 +1,7 @@
 {
-  "name": "my-data-safe",
+  "name": "custom-gallery-app",
   "version": "1.0.0",
-  "main": "expo/AppEntry.js",
+  "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -9,9 +9,8 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@asyncstorage/async-storage": "1.23.1",
+    "@react-native-async-storage/async-storage": "1.23.1",
     "expo": "~51.0.0",
-    "expo-media-library": "~16.0.4",
     "expo-status-bar": "~1.12.1",
     "react": "18.2.0",
     "react-native": "0.74.5"
