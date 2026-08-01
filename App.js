@@ -49,7 +49,7 @@ export default function App() {
   const loadGalleryPhotos = async () => {
     try {
       const media = await MediaLibrary.getAssetsAsync({
-        first: 5000,
+        first: 2000, // Updated limit to 2000 photos
         sortBy: [[MediaLibrary.SortBy.creationTime, false]],
         mediaType: [MediaLibrary.MediaType.photo],
       });
@@ -159,6 +159,7 @@ export default function App() {
           {hasPermission ? (
             <FlatList
               horizontal
+              nestedScrollEnabled={true}
               data={photos}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
