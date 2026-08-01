@@ -3,16 +3,8 @@
     "name": "My Data Safe",
     "slug": "my-data-safe",
     "version": "1.0.0",
-    "owner": "ar76ar-devs-team",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
-    "ios": {
-      "supportsTablet": true
-    },
+    "entryPoint": "./App.js",
     "android": {
       "package": "com.mydatasafe.app",
       "permissions": [
@@ -25,18 +17,10 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow My Data Safe to access your photo gallery.",
-          "saveTemplate": true
+          "photosPermission": "Allow this app to access your data",
+          "savePhotosPermission": "Allow this app to access your data"
         }
       ]
-    ],
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
-    "extra": {
-      "eas": {
-        "projectId": "e110fb4e-8b13-4258-a657-e3d5022ca7c5"
-      }
-    }
+    ]
   }
 }
