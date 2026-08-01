@@ -6,12 +6,14 @@
     "preview": {
       "android": {
         "buildType": "apk"
-      }
+      },
+      "packageManager": "npm"
     },
     "production": {
       "android": {
         "buildType": "apk"
-      }
+      },
+      "packageManager": "npm"
     }
   }
 }
