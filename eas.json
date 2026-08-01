@@ -9,14 +9,12 @@
     },
     "preview": {
       "distribution": "internal",
-      "npmClient": "npm",
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
       "node": "20.18.0",
-      "npmClient": "npm",
       "android": {
         "buildType": "apk"
       }
