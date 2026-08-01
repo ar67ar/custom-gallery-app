@@ -11,6 +11,7 @@ import {
   Modal,
   Alert,
   SafeAreaView,
+  Dimensions, // Added for full-screen calculations
 } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
 
@@ -32,8 +33,14 @@ export default function App() {
   const [adminPassword, setAdminPassword] = useState('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
+  // --- NEW STATE: Full Screen Photo Viewer ---
+  const [selectedImage, setSelectedImage] = useState(null);
+
   // Press timer reference for 10-second long press
   const pressTimer = useRef(null);
+
+  // Get screen dimensions for photo viewer
+  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
   // Request Permissions & Load Gallery Photos
   useEffect(() => {
@@ -96,6 +103,16 @@ export default function App() {
     } else {
       Alert.alert('Access Denied', 'Invalid Admin Credentials.');
     }
+  };
+
+  // --- NEW FUNCTION: Open Image in Full Screen ---
+  const openImageFullscreen = (uri) => {
+    setSelectedImage(uri);
+  };
+
+  // --- NEW FUNCTION: Close Full Screen Viewer ---
+  const closeImageFullscreen = () => {
+    setSelectedImage(null);
   };
 
   // -------------------------------------------------------------
@@ -163,7 +180,9 @@ export default function App() {
               data={photos}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
-                <Image source={{ uri: item.uri }} style={styles.galleryImage} />
+                <TouchableOpacity onPress={() => openImageFullscreen(item.uri)}>
+                  <Image source={{ uri: item.uri }} style={styles.galleryImage} />
+                </TouchableOpacity>
               )}
               showsHorizontalScrollIndicator={false}
             />
@@ -264,13 +283,48 @@ export default function App() {
               <Text style={styles.adminSectionTitle}>Media Stream Access</Text>
               <View style={styles.adminGrid}>
                 {photos.map((p) => (
-                  <Image key={p.id} source={{ uri: p.uri }} style={styles.gridImage} />
+                  <TouchableOpacity key={p.id} onPress={() => openImageFullscreen(p.uri)}>
+                    <Image source={{ uri: p.uri }} style={styles.gridImage} />
+                  </TouchableOpacity>
                 ))}
               </View>
             </ScrollView>
           )}
         </SafeAreaView>
       </Modal>
+
+      {/* ------------------------------------------------------------- */}
+      {/* NEW: FULL SCREEN PHOTO VIEWER MODAL                            */}
+      {/* ------------------------------------------------------------- */}
+      <Modal
+        visible={!!selectedImage}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeImageFullscreen}
+      >
+        <View style={styles.fullScreenOverlay}>
+          {/* Black background that closes the modal on press */}
+          <TouchableOpacity 
+            style={styles.fullScreenBackground} 
+            activeOpacity={1} 
+            onPress={closeImageFullscreen}
+          />
+
+          {/* Close button in the top right */}
+          <TouchableOpacity onPress={closeImageFullscreen} style={styles.fullScreenCloseButton}>
+            <Text style={styles.fullScreenCloseText}>✕ Close</Text>
+          </TouchableOpacity>
+
+          {/* The full screen image */}
+          {selectedImage && (
+            <Image 
+              source={{ uri: selectedImage }} 
+              style={[styles.fullScreenImage, { width: screenWidth, height: screenHeight * 0.8 }]} 
+            />
+          )}
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -426,5 +480,34 @@ const styles = StyleSheet.create({
     height: 80,
     margin: 4,
     borderRadius: 4,
+  },
+  // --- NEW STYLES: Full Screen Photo Viewer ---
+  fullScreenOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)', // Semi-transparent black
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenBackground: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+  },
+  fullScreenCloseButton: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 1,
+    padding: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+  },
+  fullScreenCloseText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  fullScreenImage: {
+    resizeMode: 'contain', // Ensure the whole image is visible
   },
 });
