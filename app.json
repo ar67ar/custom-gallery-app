@@ -2,6 +2,7 @@
   "expo": {
     "name": "My Data Safe",
     "slug": "my-data-safe",
+    "owner": "ar76ar-devs-team",
     "version": "1.0.0",
     "orientation": "portrait",
     "entryPoint": "./App.js",
@@ -29,3 +30,4 @@
     }
   }
 }
+
