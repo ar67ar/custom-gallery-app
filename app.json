@@ -6,6 +6,12 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "entryPoint": "./App.js",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "android": {
       "package": "com.mydatasafe.app",
       "permissions": [
